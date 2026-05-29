@@ -106,3 +106,58 @@
 .imgbb-privacy-warning .mtj-warning-tos {
 	font-size: 0.9em;
 }
+
+/* Image list in preview modal */
+.mtj-image-list {
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 12px 16px;
+	margin-bottom: 16px;
+}
+
+.mtj-image-list h4 {
+	margin: 0 0 0.5em 0;
+}
+
+.mtj-image-list-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin: 0 0 0.75em 0;
+}
+
+.mtj-image-list-actions {
+	margin-bottom: 0.75em;
+}
+
+.mtj-image-list-items {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.mtj-image-list-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 6px 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.mtj-image-list-item:first-child {
+	border-top: none;
+}
+
+.mtj-image-list-path {
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	word-break: break-all;
+	flex: 1;
+}
+
+.mtj-image-list-buttons {
+	display: flex;
+	gap: 6px;
+	flex-shrink: 0;
+}

@@ -10,15 +10,34 @@ import { issueLinks } from '../rules/issueLinks';
 import MTJPlugin from '../main';
 import { ImageHandler } from '../services/ImageHandler';
 
+export interface CollectedImage {
+	src: string;
+	alt: string;
+	isLocal: boolean;
+}
+
 export class Translator {
 	plugin: MTJPlugin;
 	private imageHandler: ImageHandler;
 	private imagesToProcess: Map<string, { src: string; alt: string; placeholder: string }>;
+	private collectedImages: CollectedImage[];
 
 	constructor(plugin: MTJPlugin) {
 		this.plugin = plugin;
-		this.imageHandler = new ImageHandler(plugin.app, plugin.settings.imageUpload);
+		this.imageHandler = new ImageHandler(plugin.app, plugin.settings.imageUpload, {
+			embedStyle: plugin.settings.imageEmbedStyle,
+			warningPanel: plugin.settings.imageWarningPanel,
+		});
 		this.imagesToProcess = new Map();
+		this.collectedImages = [];
+	}
+
+	getCollectedImages(): CollectedImage[] {
+		return this.collectedImages;
+	}
+
+	registerLocalImage(src: string, alt: string, isLocal: boolean): void {
+		this.collectedImages.push({ src, alt, isLocal });
 	}
 
 	/**
@@ -48,6 +67,7 @@ export class Translator {
 	 * Synchronous conversion for content without local images
 	 */
 	convertMarkdownToJiraSync(markdown: string): string {
+		this.collectedImages = [];
 		const frontmatter = extractFrontmatter(markdown);
 		const contentWithoutFrontmatter = markdown.replace(/^---\n[\s\S]*?\n---/, '');
 
@@ -77,6 +97,7 @@ export class Translator {
 		}
 
 		this.imagesToProcess.clear();
+		this.collectedImages = [];
 
 		const frontmatter = extractFrontmatter(markdown);
 		const contentWithoutFrontmatter = markdown.replace(/^---\n[\s\S]*?\n---/, '');
@@ -111,7 +132,7 @@ export class Translator {
 			.use(callouts, this.plugin.settings.calloutConfigurations);
 
 		// Add mermaid handling
-		md.use(mermaid, this.plugin.settings.mermaidHandling);
+		md.use(mermaid, this.plugin.settings.mermaidHandling, this.plugin.settings.codeBlockStyle);
 
 		// Add mentions if enabled
 		if (this.plugin.settings.convertMentions) {
@@ -140,6 +161,7 @@ export class Translator {
 	registerImage(src: string, alt: string): string {
 		const placeholder = `__IMAGE_PLACEHOLDER_${this.imagesToProcess.size}__`;
 		this.imagesToProcess.set(placeholder, { src, alt, placeholder });
+		this.collectedImages.push({ src, alt, isLocal: true });
 		return placeholder;
 	}
 

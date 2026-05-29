@@ -149,12 +149,22 @@ export default class MTJPlugin extends Plugin {
 
 	async convertToJira(content: string): Promise<void> {
 		const markup = await this.translator.convertMarkdownToJira(content);
+		const images = this.translator.getCollectedImages();
+		const localImages = images.filter((i) => i.isLocal);
 
-		if (this.settings.showPreviewBeforeCopy) {
-			new PreviewModal(this.app, markup, 'jira', async () => {
-				await navigator.clipboard.writeText(markup);
-				new Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
-			}).open();
+		// Show preview when explicitly enabled, OR when there are local images
+		// the user needs to upload manually.
+		if (this.settings.showPreviewBeforeCopy || localImages.length > 0) {
+			new PreviewModal(
+				this.app,
+				markup,
+				'jira',
+				async () => {
+					await navigator.clipboard.writeText(markup);
+					new Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
+				},
+				images,
+			).open();
 		} else {
 			await navigator.clipboard.writeText(markup);
 			new Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);

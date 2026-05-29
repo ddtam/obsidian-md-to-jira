@@ -86,6 +86,13 @@ describe('ConfluenceTranslator - Markdown to Confluence Conversion', () => {
 				baseUrl: '',
 			},
 			showPreviewBeforeCopy: false,
+			imageEmbedStyle: 'thumbnail',
+			imageWarningPanel: false,
+			explicitLineBreaks: {
+				afterHeading: true,
+				afterTable: true,
+			},
+			codeBlockStyle: 'code',
 		};
 
 		mockPlugin = {

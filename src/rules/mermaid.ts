@@ -1,11 +1,16 @@
 import * as MarkdownIt from "markdown-it";
-import { MermaidHandling } from "../settings";
+import { CodeBlockStyle, MermaidHandling } from "../settings";
 import { JIRA_MARKUP } from "../constants";
+import { renderCodeBlock } from "../utils/codeBlock";
 
 /**
  * Handle Mermaid diagram code blocks
  */
-export function mermaid(md: MarkdownIt, handling: MermaidHandling): void {
+export function mermaid(
+	md: MarkdownIt,
+	handling: MermaidHandling,
+	codeBlockStyle: CodeBlockStyle = 'code',
+): void {
 	// Store the original fence renderer
 	const originalFence = md.renderer.rules.fence;
 
@@ -19,9 +24,7 @@ export function mermaid(md: MarkdownIt, handling: MermaidHandling): void {
 				return originalFence(tokens, idx, options, env, self);
 			}
 			// Default fence rendering for Jira
-			const code = token.content.trim();
-			const language = token.info.trim() || 'none';
-			return `{code:${language}}\n${code}\n{code}\n`;
+			return renderCodeBlock(token.content.trim(), token.info.trim(), codeBlockStyle);
 		}
 
 		const content = token.content.trim();
@@ -29,11 +32,11 @@ export function mermaid(md: MarkdownIt, handling: MermaidHandling): void {
 		switch (handling) {
 			case 'code-block':
 				// Keep as a code block with mermaid language
-				return `{code:mermaid}\n${content}\n{code}\n`;
+				return renderCodeBlock(content, 'mermaid', codeBlockStyle);
 
 			case 'plantuml':
 				// Attempt basic conversion to PlantUML
-				return convertToPlantUML(content);
+				return convertToPlantUML(content, codeBlockStyle);
 
 			case 'warning':
 				// Show a warning that Mermaid is not supported
@@ -41,13 +44,10 @@ export function mermaid(md: MarkdownIt, handling: MermaidHandling): void {
 {color:${JIRA_MARKUP.WARNING_PANEL.TEXT_COLOR}}+*Warning:*+ Mermaid diagrams are not natively supported in Jira/Confluence. The diagram source code is included below:{color}
 {panel}
 
-{code:mermaid}
-${content}
-{code}
-`;
+${renderCodeBlock(content, 'mermaid', codeBlockStyle)}`;
 
 			default:
-				return `{code:mermaid}\n${content}\n{code}\n`;
+				return renderCodeBlock(content, 'mermaid', codeBlockStyle);
 		}
 	};
 }
@@ -56,7 +56,7 @@ ${content}
  * Basic Mermaid to PlantUML conversion
  * This handles simple cases; complex diagrams may not convert perfectly
  */
-function convertToPlantUML(mermaidCode: string): string {
+function convertToPlantUML(mermaidCode: string, codeBlockStyle: CodeBlockStyle = 'code'): string {
 	const lines = mermaidCode.split('\n');
 	const plantUmlLines: string[] = ['@startuml'];
 
@@ -113,10 +113,7 @@ function convertToPlantUML(mermaidCode: string): string {
 
 	plantUmlLines.push('@enduml');
 
-	return `{code:plantuml}
-${plantUmlLines.join('\n')}
-{code}
-`;
+	return renderCodeBlock(plantUmlLines.join('\n'), 'plantuml', codeBlockStyle);
 }
 
 function convertFlowchartLine(line: string): string {

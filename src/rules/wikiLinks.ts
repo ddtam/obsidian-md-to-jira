@@ -1,7 +1,11 @@
 import * as markdownIt from 'markdown-it';
 import { Translator } from 'src/core/Translator';
+import { renderImageMarkup } from 'src/utils/imageMarkup';
 
 export function wikiLinks(md: markdownIt, options?: { translator?: Translator }): void {
+    const settings = options?.translator?.plugin.settings;
+    const embedStyle = settings?.imageEmbedStyle ?? 'alt';
+    const warningPanel = settings?.imageWarningPanel ?? false;
     md.inline.ruler.before('link', 'wikilink', (state, silent) => {
         const max = state.posMax;
         const start = state.pos;
@@ -60,11 +64,15 @@ export function wikiLinks(md: markdownIt, options?: { translator?: Translator })
             return options.translator.registerImage(filename, alt);
         }
 
-        return `{panel:borderColor=#ffecb5|bgColor=#fff3cd}
+        const inline = renderImageMarkup(filename, alt, embedStyle);
+        if (warningPanel) {
+            return `{panel:borderColor=#ffecb5|bgColor=#fff3cd}
 {color:#664d03}+*Warning:*+ The following file must be transferred manually via drag & drop: *${filename}*{color}
 {panel}
 
-!${filename}|alt=${alt}!`;
+${inline}`;
+        }
+        return inline;
     };
 
     md.renderer.rules.wikilink = (tokens, idx) => {

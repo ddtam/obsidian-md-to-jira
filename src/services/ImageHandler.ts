@@ -1,6 +1,7 @@
 import { App, Notice, TFile } from 'obsidian';
-import { MTJImageUploadSettings } from '../settings';
+import { ImageEmbedStyle, MTJImageUploadSettings } from '../settings';
 import { ImgbbUploader } from './ImgbbUploader';
+import { renderImageMarkup, renderWarningPanel } from '../utils/imageMarkup';
 
 export interface ImageHandlerResult {
 	jiraMarkup: string;
@@ -8,26 +9,33 @@ export interface ImageHandlerResult {
 	error?: string;
 }
 
+export interface ImageHandlerOptions {
+	embedStyle: ImageEmbedStyle;
+	warningPanel: boolean;
+}
+
 export class ImageHandler {
 	private app: App;
 	private settings: MTJImageUploadSettings;
+	private opts: ImageHandlerOptions;
 
-	constructor(app: App, settings: MTJImageUploadSettings) {
+	constructor(app: App, settings: MTJImageUploadSettings, opts: ImageHandlerOptions) {
 		this.app = app;
 		this.settings = settings;
+		this.opts = opts;
 	}
 
 	async handleImage(src: string, alt: string): Promise<ImageHandlerResult> {
 		if (this.isUrlOrBase64(src)) {
 			return {
-				jiraMarkup: `!${src}|alt=${alt}!`,
+				jiraMarkup: renderImageMarkup(src, alt, this.opts.embedStyle),
 				success: true,
 			};
 		}
 
 		if (!this.isImageFile(src)) {
 			return {
-				jiraMarkup: `!${src}|alt=${alt}!`,
+				jiraMarkup: renderImageMarkup(src, alt, this.opts.embedStyle),
 				success: true,
 			};
 		}
@@ -60,7 +68,7 @@ export class ImageHandler {
 			if (result.success && result.url) {
 				new Notice(`Image uploaded to ImgBB: ${file.name}`);
 				return {
-					jiraMarkup: `!${result.url}|alt=${alt}!`,
+					jiraMarkup: renderImageMarkup(result.url, alt, this.opts.embedStyle),
 					success: true,
 				};
 			} else {
@@ -84,14 +92,11 @@ export class ImageHandler {
 	}
 
 	private manualHandling(src: string, alt: string): ImageHandlerResult {
-		return {
-			jiraMarkup: `{panel:borderColor=#ffecb5|bgColor=#fff3cd}
-{color:#664d03}+*Warning:*+ The following file must be transferred manually via drag & drop: *${src}*{color}
-{panel}
-
-!${src}|alt=${alt}!`,
-			success: true,
-		};
+		const inline = renderImageMarkup(src, alt, this.opts.embedStyle);
+		const markup = this.opts.warningPanel
+			? `${renderWarningPanel(src)}\n${inline}`
+			: inline;
+		return { jiraMarkup: markup, success: true };
 	}
 
 	private isUrlOrBase64(src: string | null): boolean {

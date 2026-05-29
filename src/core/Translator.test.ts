@@ -86,6 +86,13 @@ describe('Translator - Markdown to Jira Conversion', () => {
                 baseUrl: '',
             },
             showPreviewBeforeCopy: false,
+            imageEmbedStyle: 'alt',
+            imageWarningPanel: true,
+            explicitLineBreaks: {
+                afterHeading: false,
+                afterTable: false,
+            },
+            codeBlockStyle: 'code',
         };
 
         mockPlugin = {
@@ -363,6 +370,33 @@ describe('Translator - Markdown to Jira Conversion', () => {
             const result = await translator.convertMarkdownToJira(markdown);
             expect(result).toContain('{{foo()}}');
             expect(result).toContain('{{bar()}}');
+        });
+    });
+
+    describe('Customization: code block style', () => {
+        test('noformat style wraps fenced code in {noformat} (no language)', async () => {
+            mockPlugin.settings.codeBlockStyle = 'noformat';
+            const markdown = '```javascript\nconst x = 42;\n```';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('{noformat}');
+            expect(result).toContain('const x = 42;');
+            expect(result).not.toContain('{code:');
+        });
+
+        test('noformat style applies to language-less fences too', async () => {
+            mockPlugin.settings.codeBlockStyle = 'noformat';
+            const markdown = '```\nplain code\n```';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('{noformat}\nplain code\n{noformat}');
+            expect(result).not.toContain('{code');
+        });
+
+        test('code style (default) still emits {code:lang}', async () => {
+            mockPlugin.settings.codeBlockStyle = 'code';
+            const markdown = '```python\nprint(1)\n```';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('{code:python}');
+            expect(result).not.toContain('{noformat}');
         });
     });
 
@@ -1032,6 +1066,79 @@ Regular paragraph text.
             const result = await translator.convertMarkdownToJira(markdown);
             expect(result).toContain('{panel:borderColor=#ffecb5|bgColor=#fff3cd}');
             expect(result).toContain('Warning');
+        });
+    });
+
+    describe('Customization: image embed style', () => {
+        test('thumbnail style emits |thumbnail for URL images', async () => {
+            mockPlugin.settings.imageEmbedStyle = 'thumbnail';
+            translator = new Translator(mockPlugin);
+            const result = await translator.convertMarkdownToJira(
+                '![Alt](https://example.com/img.png)'
+            );
+            expect(result).toContain('!https://example.com/img.png|thumbnail!');
+            expect(result).not.toContain('alt=Alt');
+        });
+
+        test('plain style emits no args', async () => {
+            mockPlugin.settings.imageEmbedStyle = 'plain';
+            translator = new Translator(mockPlugin);
+            const result = await translator.convertMarkdownToJira(
+                '![Alt](https://example.com/img.png)'
+            );
+            expect(result).toContain('!https://example.com/img.png!');
+        });
+    });
+
+    describe('Customization: explicit line breaks', () => {
+        test('emits \\\\ on its own line after headings when enabled', async () => {
+            mockPlugin.settings.explicitLineBreaks.afterHeading = true;
+            translator = new Translator(mockPlugin);
+            const result = await translator.convertMarkdownToJira('# Title\n\nbody');
+            expect(result).toContain('h1. Title\n\\\\\n');
+        });
+
+        test('emits \\\\ on its own line after tables when enabled', async () => {
+            mockPlugin.settings.explicitLineBreaks.afterTable = true;
+            translator = new Translator(mockPlugin);
+            const md = '| H1 | H2 |\n|----|----|\n| a  | b  |\n\nbody';
+            const result = await translator.convertMarkdownToJira(md);
+            expect(result).toMatch(/\|a\|b\|\s*\n\\\\\n/);
+        });
+
+        test('no \\\\ when toggles off', async () => {
+            mockPlugin.settings.explicitLineBreaks.afterHeading = false;
+            mockPlugin.settings.explicitLineBreaks.afterTable = false;
+            translator = new Translator(mockPlugin);
+            const result = await translator.convertMarkdownToJira('# Title\n\nbody');
+            expect(result).not.toContain('\\\\');
+        });
+    });
+
+    describe('Customization: collected images for upload list', () => {
+        test('exposes local images via getCollectedImages', async () => {
+            await translator.convertMarkdownToJira('![A](./a.png)\n\n![B](./b.png)');
+            const images = translator.getCollectedImages();
+            const local = images.filter((i) => i.isLocal);
+            expect(local).toHaveLength(2);
+            expect(local.map((i) => i.src).sort()).toEqual(['./a.png', './b.png']);
+        });
+
+        test('URL images are collected but flagged non-local', async () => {
+            await translator.convertMarkdownToJira('![X](https://example.com/x.png)');
+            const images = translator.getCollectedImages();
+            expect(images).toHaveLength(1);
+            expect(images[0]).toMatchObject({
+                src: 'https://example.com/x.png',
+                isLocal: false,
+            });
+        });
+
+        test('collected images reset between conversions', async () => {
+            await translator.convertMarkdownToJira('![A](./a.png)');
+            await translator.convertMarkdownToJira('![B](./b.png)');
+            const images = translator.getCollectedImages();
+            expect(images.map((i) => i.src)).toEqual(['./b.png']);
         });
     });
 });

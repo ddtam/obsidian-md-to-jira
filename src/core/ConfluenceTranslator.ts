@@ -17,7 +17,10 @@ export class ConfluenceTranslator {
 
 	constructor(plugin: MTJPlugin) {
 		this.plugin = plugin;
-		this.imageHandler = new ImageHandler(plugin.app, plugin.settings.imageUpload);
+		this.imageHandler = new ImageHandler(plugin.app, plugin.settings.imageUpload, {
+			embedStyle: plugin.settings.imageEmbedStyle,
+			warningPanel: plugin.settings.imageWarningPanel,
+		});
 		this.imagesToProcess = new Map();
 	}
 

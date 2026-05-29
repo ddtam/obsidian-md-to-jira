@@ -1,6 +1,9 @@
 import esbuild from "esbuild";
 import process from "process";
-import builtins from 'builtin-modules'
+import builtins from 'builtin-modules';
+import { existsSync, readFileSync, copyFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const banner =
 `/*
@@ -9,7 +12,60 @@ if you want to view the source, please visit the github repository of this plugi
 */
 `;
 
+const here = dirname(fileURLToPath(import.meta.url));
 const prod = (process.argv[2] === 'production');
+
+// Manual .env.local loader — keeps this file dep-free.
+function loadEnvLocal() {
+	const envPath = resolve(here, '.env.local');
+	if (!existsSync(envPath)) return;
+	for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith('#')) continue;
+		const eq = trimmed.indexOf('=');
+		if (eq === -1) continue;
+		const key = trimmed.slice(0, eq).trim();
+		let value = trimmed.slice(eq + 1).trim();
+		if ((value.startsWith('"') && value.endsWith('"')) ||
+		    (value.startsWith("'") && value.endsWith("'"))) {
+			value = value.slice(1, -1);
+		}
+		if (process.env[key] === undefined) process.env[key] = value;
+	}
+}
+loadEnvLocal();
+
+// In dev mode, when OBSIDIAN_VAULT is set, route the build directly into
+// the vault's plugin folder so reloading in Obsidian picks up changes
+// without a manual copy step. Matches the todoist-sync-plus workflow.
+const PLUGIN_ID = 'obsidian-md-to-jira-plus';
+function resolveOutDir() {
+	if (prod) return here;
+	const vault = process.env.OBSIDIAN_VAULT;
+	if (!vault) return here;
+	const dest = resolve(vault, '.obsidian', 'plugins', PLUGIN_ID);
+	mkdirSync(dest, { recursive: true });
+	return dest;
+}
+const outDir = resolveOutDir();
+const installingToVault = outDir !== here;
+
+// Copy manifest.json + styles.css alongside main.js on each build so
+// Obsidian's plugin folder stays in sync.
+const syncSidecarsPlugin = {
+	name: 'mtj-sync-sidecars',
+	setup(build) {
+		build.onEnd(() => {
+			for (const f of ['manifest.json', 'styles.css']) {
+				try {
+					copyFileSync(resolve(here, f), resolve(outDir, f));
+				} catch (err) {
+					console.warn(`warn: could not copy ${f}: ${err.message}`);
+				}
+			}
+		});
+	},
+};
 
 const buildOptions = {
 	banner: {
@@ -37,8 +93,13 @@ const buildOptions = {
 	logLevel: "info",
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
-	outfile: 'main.js',
+	outfile: resolve(outDir, 'main.js'),
+	plugins: installingToVault ? [syncSidecarsPlugin] : [],
 };
+
+if (installingToVault) {
+	console.log(`[esbuild] dev install -> ${outDir}`);
+}
 
 if (prod) {
 	esbuild.build(buildOptions).catch(() => process.exit(1));

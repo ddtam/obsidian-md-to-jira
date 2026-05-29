@@ -29,12 +29,19 @@ export interface MTJCallout {
 export type ImageUploadMethod = 'manual' | 'imgbb';
 export type OutputFormat = 'jira' | 'confluence';
 export type MermaidHandling = 'code-block' | 'plantuml' | 'warning';
+export type ImageEmbedStyle = 'thumbnail' | 'alt' | 'plain';
+export type CodeBlockStyle = 'code' | 'noformat';
 
 export interface MTJImageUploadSettings {
 	method: ImageUploadMethod;
 	imgbb: {
 		apiKey: string;
 	};
+}
+
+export interface MTJExplicitLineBreaks {
+	afterHeading: boolean;
+	afterTable: boolean;
 }
 
 export interface MTJJiraIssueLinkSettings {
@@ -63,6 +70,10 @@ export interface MTJPluginSettings {
 	convertMentions: boolean;
 	jiraIssueLink: MTJJiraIssueLinkSettings;
 	showPreviewBeforeCopy: boolean;
+	imageEmbedStyle: ImageEmbedStyle;
+	imageWarningPanel: boolean;
+	explicitLineBreaks: MTJExplicitLineBreaks;
+	codeBlockStyle: CodeBlockStyle;
 }
 
 export const DEFAULT_SETTINGS: MTJPluginSettings = {
@@ -100,6 +111,13 @@ export const DEFAULT_SETTINGS: MTJPluginSettings = {
 		baseUrl: '',
 	},
 	showPreviewBeforeCopy: false,
+	imageEmbedStyle: 'thumbnail',
+	imageWarningPanel: false,
+	explicitLineBreaks: {
+		afterHeading: true,
+		afterTable: true,
+	},
+	codeBlockStyle: 'code',
 };
 
 export default class MTJSettingsTab extends PluginSettingTab {
@@ -155,6 +173,87 @@ export default class MTJSettingsTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		// Output formatting Section
+		new Setting(containerEl).setName("Output formatting").setHeading();
+
+		new Setting(containerEl)
+			.setName("Image embed style")
+			.setDesc(
+				"How image markup is emitted. 'Thumbnail' produces !path|thumbnail!, " +
+				"'Alt text' produces !path|alt=...!, 'Plain' produces !path!."
+			)
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption('thumbnail', 'Thumbnail (|thumbnail)')
+					.addOption('alt', 'Alt text (|alt=...)')
+					.addOption('plain', 'Plain (no args)')
+					.setValue(this.plugin.settings.imageEmbedStyle)
+					.onChange(async (value: ImageEmbedStyle) => {
+						this.plugin.settings.imageEmbedStyle = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Wrap local images in warning panel")
+			.setDesc(
+				"When on, local images that must be uploaded manually are preceded by a yellow {panel} warning. " +
+				"Off by default — the converted image list in the preview modal makes manual uploads easier to track."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.imageWarningPanel)
+					.onChange(async (value) => {
+						this.plugin.settings.imageWarningPanel = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Explicit line break after headings")
+			.setDesc(
+				"Insert a Jira forced line break (\\\\) on its own line after each heading so Jira renders visible whitespace below."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.explicitLineBreaks.afterHeading)
+					.onChange(async (value) => {
+						this.plugin.settings.explicitLineBreaks.afterHeading = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Explicit line break after tables")
+			.setDesc(
+				"Insert a Jira forced line break (\\\\) on its own line after each table so Jira renders visible whitespace below."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.explicitLineBreaks.afterTable)
+					.onChange(async (value) => {
+						this.plugin.settings.explicitLineBreaks.afterTable = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Code block style")
+			.setDesc(
+				"How fenced code blocks are emitted. '{code}' adds syntax highlighting (e.g. {code:js}); " +
+				"'{noformat}' is plain preformatted text for older Jira instances that don't render {code} blocks."
+			)
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption('code', '{code} (syntax highlighted)')
+					.addOption('noformat', '{noformat} (plain, older Jira)')
+					.setValue(this.plugin.settings.codeBlockStyle)
+					.onChange(async (value: CodeBlockStyle) => {
+						this.plugin.settings.codeBlockStyle = value;
+						await this.plugin.saveSettings();
+					});
+			});
 
 		// Paste Detection Section
 		new Setting(containerEl).setName("Clipboard detection").setHeading();

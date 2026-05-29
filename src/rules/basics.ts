@@ -1,15 +1,24 @@
 import MarkdownIt from "markdown-it";
 import { Validator } from "src/utils/Validator";
 import { Translator } from "src/core/Translator";
+import { renderImageMarkup } from "src/utils/imageMarkup";
+import { renderCodeBlock } from "src/utils/codeBlock";
 
 export function basics(md: MarkdownIt, options?: { translator?: Translator }): void {
+    const settings = options?.translator?.plugin.settings;
+    const breakAfterHeading = settings?.explicitLineBreaks?.afterHeading ?? false;
+    const breakAfterTable = settings?.explicitLineBreaks?.afterTable ?? false;
+    const embedStyle = settings?.imageEmbedStyle ?? 'alt';
+    const warningPanel = settings?.imageWarningPanel ?? false;
+    const codeBlockStyle = settings?.codeBlockStyle ?? 'code';
+
     md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
         const level = tokens[idx].tag.slice(1);
         return `h${level}. `;
     };
 
     md.renderer.rules.heading_close = () => {
-        return '\n';
+        return breakAfterHeading ? '\n\\\\\n' : '\n';
     };
 
     md.renderer.rules.paragraph_open = () => {
@@ -209,18 +218,26 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
         const src = tokens[idx].attrGet('src');
         const alt = tokens[idx].content || 'Image';
 
+        if (Validator.isUrlOrBase64(src)) {
+            if (src != null && options?.translator) {
+                options.translator.registerLocalImage(src, alt, false);
+            }
+            return renderImageMarkup(src as string, alt, embedStyle);
+        }
+
         if (options?.translator && src != null) {
             return options.translator.registerImage(src, alt);
         }
 
-        if (Validator.isUrlOrBase64(src)) {
-            return `!${src}|alt=${alt}!`;
-        }
-        return `{panel:borderColor=#ffecb5|bgColor=#fff3cd}
-				{color:#664d03}+*Warning:*+ The following file must be transferred manually via drag & drop: *${src}*{color}
-				{panel}
+        const inline = renderImageMarkup(src as string, alt, embedStyle);
+        if (warningPanel) {
+            return `{panel:borderColor=#ffecb5|bgColor=#fff3cd}
+{color:#664d03}+*Warning:*+ The following file must be transferred manually via drag & drop: *${src}*{color}
+{panel}
 
-				!${src}|alt=${alt}!`;
+${inline}`;
+        }
+        return inline;
     };
 
     md.renderer.rules.code_inline = (tokens, idx) => {
@@ -230,8 +247,8 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
     md.renderer.rules.fence = (tokens, idx) => {
         const token = tokens[idx];
         const code = token.content.trim();
-        const lang = token.info.trim() || 'none'; 
-        return `{code:${lang}}\n${code}\n{code}\n`;
+        const lang = token.info.trim();
+        return renderCodeBlock(code, lang, codeBlockStyle);
     };
 
     md.renderer.rules.table_open = () => {
@@ -239,7 +256,7 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
     };
 
     md.renderer.rules.table_close = () => {
-        return '\n';
+        return breakAfterTable ? '\n\\\\\n' : '\n';
     };
 
     md.renderer.rules.thead_open = () => {
