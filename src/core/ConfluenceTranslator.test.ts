@@ -90,6 +90,7 @@ describe('ConfluenceTranslator - Markdown to Confluence Conversion', () => {
 			imageWarningPanel: false,
 			explicitLineBreaks: {
 				afterHeading: true,
+				beforeTable: true,
 				afterTable: true,
 			},
 			codeBlockStyle: 'code',

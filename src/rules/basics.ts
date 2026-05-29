@@ -7,6 +7,7 @@ import { renderCodeBlock } from "src/utils/codeBlock";
 export function basics(md: MarkdownIt, options?: { translator?: Translator }): void {
     const settings = options?.translator?.plugin.settings;
     const breakAfterHeading = settings?.explicitLineBreaks?.afterHeading ?? false;
+    const breakBeforeTable = settings?.explicitLineBreaks?.beforeTable ?? false;
     const breakAfterTable = settings?.explicitLineBreaks?.afterTable ?? false;
     const embedStyle = settings?.imageEmbedStyle ?? 'alt';
     const warningPanel = settings?.imageWarningPanel ?? false;
@@ -252,11 +253,25 @@ ${inline}`;
     };
 
     md.renderer.rules.table_open = () => {
-        return '';
+        return breakBeforeTable ? '\\\\\n' : '';
     };
 
-    md.renderer.rules.table_close = () => {
-        return breakAfterTable ? '\n\\\\\n' : '\n';
+    md.renderer.rules.table_close = (tokens, idx) => {
+        if (!breakAfterTable) {
+            return '\n';
+        }
+        // A heading already renders with spacing above it, so skip the trailing
+        // break when the next block is a heading to avoid doubled whitespace.
+        for (let i = idx + 1; i < tokens.length; i++) {
+            const type = tokens[i].type;
+            if (type === 'heading_open') {
+                return '\n';
+            }
+            if (type.endsWith('_open') || type === 'hr' || type === 'fence') {
+                break;
+            }
+        }
+        return '\n\\\\\n';
     };
 
     md.renderer.rules.thead_open = () => {

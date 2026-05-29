@@ -492,6 +492,7 @@ var DEFAULT_SETTINGS = {
   imageWarningPanel: false,
   explicitLineBreaks: {
     afterHeading: true,
+    beforeTable: true,
     afterTable: true
   },
   codeBlockStyle: "code"
@@ -546,6 +547,14 @@ var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
     ).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.explicitLineBreaks.afterHeading).onChange(async (value) => {
         this.plugin.settings.explicitLineBreaks.afterHeading = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Explicit line break before tables").setDesc(
+      "Insert a Jira forced line break (\\\\) on its own line before each table so Jira renders visible whitespace above."
+    ).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.explicitLineBreaks.beforeTable).onChange(async (value) => {
+        this.plugin.settings.explicitLineBreaks.beforeTable = value;
         await this.plugin.saveSettings();
       })
     );
@@ -6351,10 +6360,8 @@ function callouts(md, options) {
   md.renderer.rules.callout_content = (tokens, idx) => {
     const type2 = tokens[idx - 1].content.toUpperCase();
     const calloutConfiguration = options.find((ccfg) => ccfg.identifier == type2);
-    let panelContent = "";
-    if (calloutConfiguration) {
-      panelContent = `{color:${calloutConfiguration.contentColor}}${tokens[idx].content}{color}`;
-    }
+    const content = tokens[idx].content;
+    const panelContent = calloutConfiguration ? `{color:${calloutConfiguration.contentColor}}${content}{color}` : content;
     return `${panelContent}
 `;
   };
@@ -9068,13 +9075,14 @@ ${code2}
 
 // src/rules/basics.ts
 function basics(md, options) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h;
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   const settings = (_a2 = options == null ? void 0 : options.translator) == null ? void 0 : _a2.plugin.settings;
   const breakAfterHeading = (_c = (_b = settings == null ? void 0 : settings.explicitLineBreaks) == null ? void 0 : _b.afterHeading) != null ? _c : false;
-  const breakAfterTable = (_e = (_d = settings == null ? void 0 : settings.explicitLineBreaks) == null ? void 0 : _d.afterTable) != null ? _e : false;
-  const embedStyle = (_f = settings == null ? void 0 : settings.imageEmbedStyle) != null ? _f : "alt";
-  const warningPanel = (_g = settings == null ? void 0 : settings.imageWarningPanel) != null ? _g : false;
-  const codeBlockStyle = (_h = settings == null ? void 0 : settings.codeBlockStyle) != null ? _h : "code";
+  const breakBeforeTable = (_e = (_d = settings == null ? void 0 : settings.explicitLineBreaks) == null ? void 0 : _d.beforeTable) != null ? _e : false;
+  const breakAfterTable = (_g = (_f = settings == null ? void 0 : settings.explicitLineBreaks) == null ? void 0 : _f.afterTable) != null ? _g : false;
+  const embedStyle = (_h = settings == null ? void 0 : settings.imageEmbedStyle) != null ? _h : "alt";
+  const warningPanel = (_i = settings == null ? void 0 : settings.imageWarningPanel) != null ? _i : false;
+  const codeBlockStyle = (_j = settings == null ? void 0 : settings.codeBlockStyle) != null ? _j : "code";
   md.renderer.rules.heading_open = (tokens, idx, options2, env, self) => {
     const level = tokens[idx].tag.slice(1);
     return `h${level}. `;
@@ -9258,10 +9266,22 @@ ${inline2}`;
     return renderCodeBlock(code2, lang, codeBlockStyle);
   };
   md.renderer.rules.table_open = () => {
-    return "";
+    return breakBeforeTable ? "\\\\\n" : "";
   };
-  md.renderer.rules.table_close = () => {
-    return breakAfterTable ? "\n\\\\\n" : "\n";
+  md.renderer.rules.table_close = (tokens, idx) => {
+    if (!breakAfterTable) {
+      return "\n";
+    }
+    for (let i = idx + 1; i < tokens.length; i++) {
+      const type2 = tokens[i].type;
+      if (type2 === "heading_open") {
+        return "\n";
+      }
+      if (type2.endsWith("_open") || type2 === "hr" || type2 === "fence") {
+        break;
+      }
+    }
+    return "\n\\\\\n";
   };
   md.renderer.rules.thead_open = () => {
     return "";

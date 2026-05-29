@@ -90,6 +90,7 @@ describe('Translator - Markdown to Jira Conversion', () => {
             imageWarningPanel: true,
             explicitLineBreaks: {
                 afterHeading: false,
+                beforeTable: false,
                 afterTable: false,
             },
             codeBlockStyle: 'code',
@@ -569,6 +570,15 @@ describe('Translator - Markdown to Jira Conversion', () => {
             const result = await translator.convertMarkdownToJira(markdown);
             expect(result).toContain('{panel:');
             expect(result).toContain('Content only');
+        });
+
+        test('emits callout content even when no callout configuration exists', async () => {
+            mockPlugin.settings.calloutConfigurations = [];
+            translator = new Translator(mockPlugin);
+            const markdown = '> [!TIP] Heads up\n> the body text must survive';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('Heads up');
+            expect(result).toContain('the body text must survive');
         });
     });
 
@@ -1106,11 +1116,41 @@ Regular paragraph text.
             expect(result).toMatch(/\|a\|b\|\s*\n\\\\\n/);
         });
 
+        test('omits the trailing \\\\ after a table when a heading follows', async () => {
+            mockPlugin.settings.explicitLineBreaks.afterTable = true;
+            mockPlugin.settings.explicitLineBreaks.beforeTable = false;
+            mockPlugin.settings.explicitLineBreaks.afterHeading = false;
+            translator = new Translator(mockPlugin);
+            const md = '| H1 | H2 |\n|----|----|\n| a  | b  |\n\n## Next section';
+            const result = await translator.convertMarkdownToJira(md);
+            expect(result).not.toMatch(/\\\\\n+h2\./);
+            expect(result).toContain('h2. Next section');
+        });
+
+        test('still emits the trailing \\\\ after a table when a paragraph follows', async () => {
+            mockPlugin.settings.explicitLineBreaks.afterTable = true;
+            mockPlugin.settings.explicitLineBreaks.beforeTable = false;
+            translator = new Translator(mockPlugin);
+            const md = '| H1 | H2 |\n|----|----|\n| a  | b  |\n\nbody';
+            const result = await translator.convertMarkdownToJira(md);
+            expect(result).toMatch(/\|a\|b\|\s*\n\\\\\n/);
+        });
+
+        test('emits \\\\ on its own line before tables when enabled', async () => {
+            mockPlugin.settings.explicitLineBreaks.beforeTable = true;
+            translator = new Translator(mockPlugin);
+            const md = 'body\n\n| H1 | H2 |\n|----|----|\n| a  | b  |';
+            const result = await translator.convertMarkdownToJira(md);
+            expect(result).toMatch(/\\\\\n\s*\|\|H1\|\|/);
+        });
+
         test('no \\\\ when toggles off', async () => {
             mockPlugin.settings.explicitLineBreaks.afterHeading = false;
+            mockPlugin.settings.explicitLineBreaks.beforeTable = false;
             mockPlugin.settings.explicitLineBreaks.afterTable = false;
             translator = new Translator(mockPlugin);
-            const result = await translator.convertMarkdownToJira('# Title\n\nbody');
+            const md = '# Title\n\nbody\n\n| H1 | H2 |\n|----|----|\n| a  | b  |';
+            const result = await translator.convertMarkdownToJira(md);
             expect(result).not.toContain('\\\\');
         });
     });

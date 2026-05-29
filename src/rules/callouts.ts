@@ -82,10 +82,12 @@ export function callouts(md: markdownIt, options: MTJCallout[]): void {
     md.renderer.rules.callout_content = (tokens, idx) => {
         const type = tokens[idx - 1].content.toUpperCase();
         const calloutConfiguration = options.find(ccfg => ccfg.identifier == type);
-        let panelContent = '';
-        if (calloutConfiguration) {
-            panelContent = `{color:${calloutConfiguration.contentColor}}${tokens[idx].content}{color}`;
-        }
+        const content = tokens[idx].content;
+        // Wrap in the configured content color when a callout config exists;
+        // otherwise still emit the raw content (was previously dropped).
+        const panelContent = calloutConfiguration
+            ? `{color:${calloutConfiguration.contentColor}}${content}{color}`
+            : content;
         return `${panelContent}\n`;
     };
 

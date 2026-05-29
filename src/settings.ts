@@ -41,6 +41,7 @@ export interface MTJImageUploadSettings {
 
 export interface MTJExplicitLineBreaks {
 	afterHeading: boolean;
+	beforeTable: boolean;
 	afterTable: boolean;
 }
 
@@ -115,6 +116,7 @@ export const DEFAULT_SETTINGS: MTJPluginSettings = {
 	imageWarningPanel: false,
 	explicitLineBreaks: {
 		afterHeading: true,
+		beforeTable: true,
 		afterTable: true,
 	},
 	codeBlockStyle: 'code',
@@ -220,6 +222,20 @@ export default class MTJSettingsTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.explicitLineBreaks.afterHeading)
 					.onChange(async (value) => {
 						this.plugin.settings.explicitLineBreaks.afterHeading = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Explicit line break before tables")
+			.setDesc(
+				"Insert a Jira forced line break (\\\\) on its own line before each table so Jira renders visible whitespace above."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.explicitLineBreaks.beforeTable)
+					.onChange(async (value) => {
+						this.plugin.settings.explicitLineBreaks.beforeTable = value;
 						await this.plugin.saveSettings();
 					})
 			);
