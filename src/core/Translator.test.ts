@@ -12,35 +12,9 @@ jest.mock('obsidian', () => ({
     requestUrl: jest.fn(),
 }));
 
-jest.mock('../services/ImageHandler', () => {
-    return {
-        ImageHandler: jest.fn().mockImplementation(() => {
-            return {
-                handleImage: jest.fn().mockImplementation(async (src: string, alt: string) => {
-                    const isUrlOrBase64 = src.startsWith('http://') ||
-                                         src.startsWith('https://') ||
-                                         src.startsWith('data:image/');
-
-                    if (isUrlOrBase64) {
-                        return {
-                            jiraMarkup: `!${src}|alt=${alt}!`,
-                            success: true
-                        };
-                    } else {
-                        return {
-                            jiraMarkup: `{panel:borderColor=#ffecb5|bgColor=#fff3cd}
-{color:#664d03}+*Warning:*+ The following file must be transferred manually via drag & drop: *${src}*{color}
-{panel}
-
-!${src}|alt=${alt}!`,
-                            success: true
-                        };
-                    }
-                })
-            };
-        })
-    };
-});
+// Uses the manual mock in src/services/__mocks__/ImageHandler.ts, shared with
+// the golden fixtures so both render images identically.
+jest.mock('../services/ImageHandler');
 
 describe('Translator - Markdown to Jira Conversion', () => {
     let translator: Translator;
@@ -402,6 +376,35 @@ describe('Translator - Markdown to Jira Conversion', () => {
     });
 
     describe('Tables', () => {
+        test('pads a short row so it stays rectangular', async () => {
+            // An empty cell must not collapse into `||`, which Jira reads as a
+            // header cell and which corrupts the row.
+            const markdown = '| A | B | C |\n|---|---|---|\n| 1 | 2 |';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('|1|2| |');
+            expect(result).not.toContain('|1|2||');
+        });
+
+        test('keeps cells from a row wider than the header', async () => {
+            const markdown = '| A | B |\n|---|---|\n| 1 | 2 | 3 |';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('|1|2|3|');
+        });
+
+        test('renders every row with the same pipe count', async () => {
+            const markdown =
+                '| A | B | C |\n|---|---|---|\n| 1 | 2 |\n| 1 | 2 | 3 | 4 |\n| 1 |   | 3 |';
+            const result = await translator.convertMarkdownToJira(markdown);
+            const pipeCounts = result
+                .split('\n')
+                .filter((line) => line.includes('|'))
+                .map((line) => (line.match(/\|/g) ?? []).length);
+            // Header cells use '||', body cells use '|', so the header row has
+            // twice as many pipes; every body row must agree with the others.
+            const bodyCounts = pipeCounts.slice(1);
+            expect(new Set(bodyCounts).size).toBe(1);
+        });
+
         test('should convert simple table to Jira format', async () => {
             const markdown = '| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |';
             const result = await translator.convertMarkdownToJira(markdown);
@@ -427,6 +430,19 @@ describe('Translator - Markdown to Jira Conversion', () => {
     });
 
     describe('Blockquotes', () => {
+        test('does not leave a blank line before the closing {quote}', async () => {
+            const markdown = '> A plain blockquote.\n> Second quoted line.';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('Second quoted line.\n{quote}');
+            expect(result).not.toContain('Second quoted line.\n\n{quote}');
+        });
+
+        test('keeps the gap between quoted paragraphs', async () => {
+            const markdown = '> First quoted paragraph.\n>\n> Second quoted paragraph.';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('First quoted paragraph.\n\nSecond quoted paragraph.');
+        });
+
         test('should convert simple blockquote to Jira format', async () => {
             const markdown = '> This is a quote';
             const result = await translator.convertMarkdownToJira(markdown);
@@ -579,6 +595,48 @@ describe('Translator - Markdown to Jira Conversion', () => {
             const result = await translator.convertMarkdownToJira(markdown);
             expect(result).toContain('Heads up');
             expect(result).toContain('the body text must survive');
+        });
+
+        test('a bare ">" blank line does not leak the body into a {quote}', async () => {
+            // Obsidian writes an in-callout blank line as a bare '>'. That used
+            // to end the block early, leaving the rest to the blockquote rule.
+            const markdown =
+                '> [!NOTE] Title\n> First line.\n>\n> Second line after a blank.';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).not.toContain('{quote}');
+            expect(result).toContain('Second line after a blank.');
+            // Both lines sit between the panel markers.
+            const body = result.slice(
+                result.indexOf('{panel:'),
+                result.indexOf('{panel}')
+            );
+            expect(body).toContain('First line.');
+            expect(body).toContain('Second line after a blank.');
+        });
+
+        test('parses inline formatting inside a callout body', async () => {
+            const markdown =
+                '> [!NOTE] Title\n> This has **bold**, a [link](https://example.com) and `code`.';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('*bold*');
+            expect(result).toContain('[link|https://example.com]');
+            expect(result).toContain('{{code}}');
+            expect(result).not.toContain('**bold**');
+        });
+
+        test('separates a callout from the preceding paragraph', async () => {
+            const markdown = 'Preceding paragraph.\n\n> [!NOTE] Title\n> Body.';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('Preceding paragraph.\n\n{panel:');
+        });
+
+        test('omits the empty panel parameter when no configuration matches', async () => {
+            mockPlugin.settings.calloutConfigurations = [];
+            translator = new Translator(mockPlugin);
+            const markdown = '> [!TIP] Heads up\n> body';
+            const result = await translator.convertMarkdownToJira(markdown);
+            expect(result).toContain('{panel:title=Heads up}');
+            expect(result).not.toContain('{panel:|');
         });
     });
 

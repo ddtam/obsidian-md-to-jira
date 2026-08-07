@@ -1,0 +1,2 @@
+Line one ending in two spaces  
+line two of the same paragraph.

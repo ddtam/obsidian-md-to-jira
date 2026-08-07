@@ -32,6 +32,42 @@ var import_obsidian8 = require("obsidian");
 // src/settings.ts
 var import_obsidian2 = require("obsidian");
 
+// src/constants.ts
+var MESSAGES = {
+  WARNINGS: {
+    MANUAL_TRANSFER: "The following file must be transferred manually via drag & drop:",
+    PRIVACY_NOTICE: "Images uploaded to ImgBB are publicly accessible. Anyone with the URL can view your images."
+  },
+  ERRORS: {
+    NO_API_KEY: "ImgBB API key not configured",
+    UPLOAD_FAILED: "ImgBB upload failed",
+    INVALID_API_KEY: "Invalid ImgBB API key"
+  },
+  SUCCESS: {
+    COPIED_CLIPBOARD: "Copied to clipboard!",
+    API_KEY_VALID: "API key is valid!",
+    IMAGE_UPLOADED: "Image uploaded successfully!"
+  }
+};
+var JIRA_MARKUP = {
+  WARNING_PANEL: {
+    BORDER_COLOR: "#ffecb5",
+    BG_COLOR: "#fff3cd",
+    TEXT_COLOR: "#664d03"
+  }
+};
+var DEFAULT_EXPLICIT_LINE_BREAKS = {
+  afterHeading: true,
+  beforeTable: true,
+  afterTable: true
+};
+var SPACING = {
+  /** Synthetic token type carrying the separator before each top-level block. */
+  TOKEN: "mtj_spacing",
+  /** Jira/Confluence forced line break, on a line of its own. */
+  FORCED_BREAK: "\\\\"
+};
+
 // src/utils/calloutTypes.ts
 var calloutTypes = {
   BUG: "Bug",
@@ -421,31 +457,6 @@ var ImgbbValidator = class {
   }
 };
 
-// src/constants.ts
-var MESSAGES = {
-  WARNINGS: {
-    MANUAL_TRANSFER: "The following file must be transferred manually via drag & drop:",
-    PRIVACY_NOTICE: "Images uploaded to ImgBB are publicly accessible. Anyone with the URL can view your images."
-  },
-  ERRORS: {
-    NO_API_KEY: "ImgBB API key not configured",
-    UPLOAD_FAILED: "ImgBB upload failed",
-    INVALID_API_KEY: "Invalid ImgBB API key"
-  },
-  SUCCESS: {
-    COPIED_CLIPBOARD: "Copied to clipboard!",
-    API_KEY_VALID: "API key is valid!",
-    IMAGE_UPLOADED: "Image uploaded successfully!"
-  }
-};
-var JIRA_MARKUP = {
-  WARNING_PANEL: {
-    BORDER_COLOR: "#ffecb5",
-    BG_COLOR: "#fff3cd",
-    TEXT_COLOR: "#664d03"
-  }
-};
-
 // src/settings.ts
 var DEFAULT_SETTINGS = {
   renderMetadata: true,
@@ -490,11 +501,7 @@ var DEFAULT_SETTINGS = {
   showPreviewBeforeCopy: false,
   imageEmbedStyle: "thumbnail",
   imageWarningPanel: false,
-  explicitLineBreaks: {
-    afterHeading: true,
-    beforeTable: true,
-    afterTable: true
-  },
+  explicitLineBreaks: { ...DEFAULT_EXPLICIT_LINE_BREAKS },
   codeBlockStyle: "code"
 };
 var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
@@ -542,8 +549,11 @@ var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian2.Setting(containerEl).setName("Explicit line breaks").setDesc(
+      "Headings own their own leading space, and any boundary between two blocks emits at most one forced break (\\\\). If two of the toggles below both apply to the same boundary, only one break is inserted. These apply to both Jira and Confluence output."
+    ).setHeading();
     new import_obsidian2.Setting(containerEl).setName("Explicit line break after headings").setDesc(
-      "Insert a Jira forced line break (\\\\) on its own line after each heading so Jira renders visible whitespace below."
+      'Insert a Jira forced line break (\\\\) on its own line after each heading so Jira renders visible whitespace below. If a table follows and "before tables" is also on, only one break is emitted.'
     ).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.explicitLineBreaks.afterHeading).onChange(async (value) => {
         this.plugin.settings.explicitLineBreaks.afterHeading = value;
@@ -559,7 +569,7 @@ var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
       })
     );
     new import_obsidian2.Setting(containerEl).setName("Explicit line break after tables").setDesc(
-      "Insert a Jira forced line break (\\\\) on its own line after each table so Jira renders visible whitespace below."
+      "Insert a Jira forced line break (\\\\) on its own line after each table so Jira renders visible whitespace below. Suppressed when the next block is a heading, which already renders its own spacing."
     ).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.explicitLineBreaks.afterTable).onChange(async (value) => {
         this.plugin.settings.explicitLineBreaks.afterTable = value;
@@ -6329,44 +6339,54 @@ function callouts(md, options) {
       if (state.sCount[nextLine] < state.blkIndent) {
         break;
       }
-      const lineContent = state.src.slice(pos, maxPos);
-      if (lineContent.startsWith("> ")) {
-        content.push(lineContent.slice(2));
-      } else {
+      const bodyMatch = state.src.slice(pos, maxPos).match(/^>[ \t]?(.*)$/);
+      if (bodyMatch === null) {
         break;
       }
+      content.push(bodyMatch[1]);
       nextLine++;
     }
+    while (content.length > 0 && content[content.length - 1].trim() === "") {
+      content.pop();
+    }
     state.line = nextLine;
-    const contentToken = state.push("callout_content", "", 0);
+    const contentToken = state.push("inline", "", 0);
     contentToken.content = content.join("\n");
+    contentToken.map = [startLine + 1, nextLine];
+    contentToken.children = [];
     state.push("callout_close", "", -1);
+    tokenOpen.map = [startLine, nextLine];
     return true;
-  });
+  }, { alt: ["paragraph", "reference", "blockquote", "list"] });
+  const configFor = (type2) => options.find((ccfg) => ccfg.identifier == type2);
+  const enclosingType = (tokens, idx) => {
+    for (let i = idx; i >= 0; i--) {
+      if (tokens[i].type === "callout_open") {
+        return tokens[i].content.toUpperCase();
+      }
+    }
+    return "";
+  };
   md.renderer.rules.callout_open = (tokens, idx) => {
     const type2 = tokens[idx].content.toUpperCase();
     let title = tokens[idx].info || type2;
     let panelColor = "";
-    const calloutConfiguration = options.find((ccfg) => ccfg.identifier == type2);
+    const calloutConfiguration = configFor(type2);
     if (calloutConfiguration) {
       panelColor = `bgColor=${calloutConfiguration.contentBgColor}|titleBGColor=${calloutConfiguration.titleBgColor}|titleColor=${calloutConfiguration.titleColor}`;
       if (calloutConfiguration.titleIcon != "none") {
         title = `${calloutConfiguration.titleIcon} ${title}`;
       }
     }
-    return `{panel:${panelColor}|title=${title}}
-`;
+    const openColor = calloutConfiguration ? `{color:${calloutConfiguration.contentColor}}` : "";
+    const params = panelColor ? `${panelColor}|title=${title}` : `title=${title}`;
+    return `{panel:${params}}
+${openColor}`;
   };
-  md.renderer.rules.callout_content = (tokens, idx) => {
-    const type2 = tokens[idx - 1].content.toUpperCase();
-    const calloutConfiguration = options.find((ccfg) => ccfg.identifier == type2);
-    const content = tokens[idx].content;
-    const panelContent = calloutConfiguration ? `{color:${calloutConfiguration.contentColor}}${content}{color}` : content;
-    return `${panelContent}
-`;
-  };
-  md.renderer.rules.callout_close = () => {
-    return `{panel}
+  md.renderer.rules.callout_close = (tokens, idx) => {
+    const closeColor = configFor(enclosingType(tokens, idx)) ? "{color}" : "";
+    return `${closeColor}
+{panel}
 `;
   };
 }
@@ -9073,27 +9093,167 @@ ${code2}
 `;
 }
 
+// src/utils/tableCells.ts
+function renderCellClose(tokens, idx) {
+  var _a2, _b;
+  const content = (_b = (_a2 = tokens[idx - 1]) == null ? void 0 : _a2.content) != null ? _b : "";
+  return content.trim() ? "" : " ";
+}
+
+// src/rules/blockSpacing.ts
+var OPENERS = {
+  paragraph_open: "paragraph",
+  heading_open: "heading",
+  bullet_list_open: "list",
+  ordered_list_open: "list",
+  table_open: "table",
+  fence: "fence",
+  hr: "hr",
+  blockquote_open: "blockquote",
+  callout_open: "callout",
+  confluence_callout_open: "callout",
+  html_block: "other"
+};
+var OVEREXTENDING = /* @__PURE__ */ new Set([
+  "bullet_list_open",
+  "ordered_list_open",
+  "list_item_open"
+]);
+function classifyBlockToken(type2) {
+  var _a2;
+  return (_a2 = OPENERS[type2]) != null ? _a2 : null;
+}
+function collectBlocks(tokens) {
+  const blocks = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.level !== 0) {
+      continue;
+    }
+    const kind = classifyBlockToken(token.type);
+    if (kind === null || token.map === null) {
+      continue;
+    }
+    const startLine = token.map[0];
+    let contentEndLine = OVEREXTENDING.has(token.type) ? startLine : token.map[1];
+    if (token.nesting === 1) {
+      let depth = 0;
+      for (let j = i; j < tokens.length; j++) {
+        const inner = tokens[j];
+        depth += inner.nesting;
+        if (inner.map && !OVEREXTENDING.has(inner.type)) {
+          contentEndLine = Math.max(contentEndLine, inner.map[1]);
+        }
+        if (depth === 0 && j > i) {
+          break;
+        }
+      }
+    }
+    blocks.push({ kind, openIdx: i, startLine, contentEndLine });
+  }
+  return blocks;
+}
+function needsExplicitBreak(prev, next, breaks) {
+  if (prev === null) {
+    return false;
+  }
+  if (next === "heading") {
+    return false;
+  }
+  if (prev === "heading" && breaks.afterHeading) {
+    return true;
+  }
+  if (next === "table" && breaks.beforeTable) {
+    return true;
+  }
+  if (prev === "table" && breaks.afterTable) {
+    return true;
+  }
+  return false;
+}
+function minimumGap(prev, next) {
+  if (next.kind === "heading" || next.kind === "callout" || prev.kind === "callout") {
+    return 1;
+  }
+  return 0;
+}
+function computeSeparator(prev, next, opts) {
+  var _a2;
+  if (prev === null) {
+    return "";
+  }
+  const sourceGap = Math.max(0, next.startLine - prev.contentEndLine);
+  const gap = Math.max(sourceGap, minimumGap(prev, next));
+  const mark = needsExplicitBreak(prev.kind, next.kind, opts.breaks) ? `${(_a2 = opts.breakMarkup) != null ? _a2 : SPACING.FORCED_BREAK}
+` : "";
+  return `${mark}${"\n".repeat(gap)}`;
+}
+function blockSpacing(md, opts) {
+  md.renderer.rules[SPACING.TOKEN] = (tokens, idx) => tokens[idx].content;
+  md.core.ruler.push("mtj_block_spacing", (state) => {
+    const blocks = collectBlocks(state.tokens);
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const separator = computeSeparator(
+        i === 0 ? null : blocks[i - 1],
+        blocks[i],
+        opts
+      );
+      if (separator === "") {
+        continue;
+      }
+      const token = new state.Token(SPACING.TOKEN, "", 0);
+      token.content = separator;
+      state.tokens.splice(blocks[i].openIdx, 0, token);
+    }
+    return true;
+  });
+}
+
+// src/rules/listLevels.ts
+function listLevels(md, ruleName = "mtj_list_levels") {
+  md.core.ruler.before("inline", ruleName, (state) => {
+    var _a2;
+    const stack = [];
+    for (const token of state.tokens) {
+      if (token.type === "bullet_list_open" || token.type === "ordered_list_open") {
+        stack.push({ isOrdered: token.type === "ordered_list_open" });
+        token.meta = token.meta || {};
+        token.meta.listLevel = stack.length;
+        token.meta.isOrdered = token.type === "ordered_list_open";
+      } else if (token.type === "bullet_list_close" || token.type === "ordered_list_close") {
+        stack.pop();
+      } else if (token.type === "list_item_open") {
+        token.meta = token.meta || {};
+        token.meta.listLevel = stack.length;
+        token.meta.isOrdered = ((_a2 = stack[stack.length - 1]) == null ? void 0 : _a2.isOrdered) || false;
+      }
+    }
+    return true;
+  });
+}
+
 // src/rules/basics.ts
 function basics(md, options) {
-  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  var _a2, _b, _c, _d, _e;
   const settings = (_a2 = options == null ? void 0 : options.translator) == null ? void 0 : _a2.plugin.settings;
-  const breakAfterHeading = (_c = (_b = settings == null ? void 0 : settings.explicitLineBreaks) == null ? void 0 : _b.afterHeading) != null ? _c : false;
-  const breakBeforeTable = (_e = (_d = settings == null ? void 0 : settings.explicitLineBreaks) == null ? void 0 : _d.beforeTable) != null ? _e : false;
-  const breakAfterTable = (_g = (_f = settings == null ? void 0 : settings.explicitLineBreaks) == null ? void 0 : _f.afterTable) != null ? _g : false;
-  const embedStyle = (_h = settings == null ? void 0 : settings.imageEmbedStyle) != null ? _h : "alt";
-  const warningPanel = (_i = settings == null ? void 0 : settings.imageWarningPanel) != null ? _i : false;
-  const codeBlockStyle = (_j = settings == null ? void 0 : settings.codeBlockStyle) != null ? _j : "code";
+  const breaks = (_b = settings == null ? void 0 : settings.explicitLineBreaks) != null ? _b : DEFAULT_EXPLICIT_LINE_BREAKS;
+  const embedStyle = (_c = settings == null ? void 0 : settings.imageEmbedStyle) != null ? _c : "alt";
+  const warningPanel = (_d = settings == null ? void 0 : settings.imageWarningPanel) != null ? _d : false;
+  const codeBlockStyle = (_e = settings == null ? void 0 : settings.codeBlockStyle) != null ? _e : "code";
   md.renderer.rules.heading_open = (tokens, idx, options2, env, self) => {
     const level = tokens[idx].tag.slice(1);
     return `h${level}. `;
   };
   md.renderer.rules.heading_close = () => {
-    return breakAfterHeading ? "\n\\\\\n" : "\n";
+    return "\n";
   };
   md.renderer.rules.paragraph_open = () => {
     return "";
   };
   md.renderer.rules.paragraph_close = (tokens, idx) => {
+    if (tokens[idx].level === 0) {
+      return "\n";
+    }
     let isInListItem = false;
     for (let i = idx - 1; i >= 0; i--) {
       if (tokens[i].type === "list_item_open") {
@@ -9125,30 +9285,8 @@ function basics(md, options) {
     }
     return "\n\n";
   };
-  md.core.ruler.before("inline", "list_fix", function(state) {
-    const stack = [];
-    state.tokens.forEach((token, i) => {
-      var _a3;
-      if (token.type === "bullet_list_open" || token.type === "ordered_list_open") {
-        stack.push({
-          isOrdered: token.type === "ordered_list_open"
-        });
-        token.meta = token.meta || {};
-        token.meta.listLevel = stack.length;
-        token.meta.isOrdered = token.type === "ordered_list_open";
-      } else if (token.type === "bullet_list_close" || token.type === "ordered_list_close") {
-        stack.pop();
-        if (stack.length === 0) {
-          const closeToken = new state.Token("list_end_marker", "", 0);
-          state.tokens.splice(i + 1, 0, closeToken);
-        }
-      } else if (token.type === "list_item_open") {
-        token.meta = token.meta || {};
-        token.meta.listLevel = stack.length;
-        token.meta.isOrdered = ((_a3 = stack[stack.length - 1]) == null ? void 0 : _a3.isOrdered) || false;
-      }
-    });
-  });
+  listLevels(md);
+  blockSpacing(md, { breaks });
   md.renderer.rules.list_item_open = (tokens, idx) => {
     var _a3, _b2;
     const listLevel = ((_a3 = tokens[idx].meta) == null ? void 0 : _a3.listLevel) || 1;
@@ -9170,37 +9308,6 @@ function basics(md, options) {
   };
   md.renderer.rules.ordered_list_close = () => {
     return "";
-  };
-  md.renderer.rules.list_end_marker = (tokens, idx) => {
-    let lastContentToken = null;
-    for (let i = idx - 1; i >= 0; i--) {
-      if ((tokens[i].type === "paragraph_open" || tokens[i].type === "inline" || tokens[i].type === "heading_open") && tokens[i].map) {
-        lastContentToken = tokens[i];
-        break;
-      }
-      if (tokens[i].type === "bullet_list_open" || tokens[i].type === "ordered_list_open") {
-        break;
-      }
-    }
-    let nextBlockToken = null;
-    for (let i = idx + 1; i < tokens.length; i++) {
-      if (tokens[i].type === "paragraph_open" || tokens[i].type === "heading_open" || tokens[i].type === "list_item_open" || tokens[i].type === "table_open" || tokens[i].type === "hr" || tokens[i].type === "fence" || tokens[i].type === "blockquote_open") {
-        nextBlockToken = tokens[i];
-        break;
-      }
-    }
-    if (lastContentToken && lastContentToken.map && nextBlockToken && nextBlockToken.map) {
-      const contentEnd = lastContentToken.map[1];
-      const nextStart = nextBlockToken.map[0];
-      const blankLines = nextStart - contentEnd;
-      if (blankLines > 0) {
-        return "\n".repeat(blankLines);
-      }
-    }
-    return "";
-  };
-  md.renderer.rules.inline = (tokens, idx) => {
-    return tokens[idx].content;
   };
   md.renderer.rules.text = (tokens, idx) => {
     return tokens[idx].content;
@@ -9266,22 +9373,10 @@ ${inline2}`;
     return renderCodeBlock(code2, lang, codeBlockStyle);
   };
   md.renderer.rules.table_open = () => {
-    return breakBeforeTable ? "\\\\\n" : "";
+    return "";
   };
-  md.renderer.rules.table_close = (tokens, idx) => {
-    if (!breakAfterTable) {
-      return "\n";
-    }
-    for (let i = idx + 1; i < tokens.length; i++) {
-      const type2 = tokens[i].type;
-      if (type2 === "heading_open") {
-        return "\n";
-      }
-      if (type2.endsWith("_open") || type2 === "hr" || type2 === "fence") {
-        break;
-      }
-    }
-    return "\n\\\\\n";
+  md.renderer.rules.table_close = () => {
+    return "";
   };
   md.renderer.rules.thead_open = () => {
     return "";
@@ -9317,20 +9412,23 @@ ${inline2}`;
   md.renderer.rules.th_open = () => {
     return "||";
   };
-  md.renderer.rules.th_close = () => {
-    return "";
+  md.renderer.rules.th_close = (tokens, idx) => {
+    return renderCellClose(tokens, idx);
   };
   md.renderer.rules.td_open = () => {
     return "|";
   };
-  md.renderer.rules.td_close = () => {
-    return "";
+  md.renderer.rules.td_close = (tokens, idx) => {
+    return renderCellClose(tokens, idx);
   };
   md.renderer.rules.blockquote_open = () => {
     return "{quote}\n";
   };
   md.renderer.rules.blockquote_close = () => {
     return "{quote}\n";
+  };
+  md.renderer.rules.hardbreak = () => {
+    return "\\\\\n";
   };
   md.renderer.rules.hr = () => {
     return "----\n";
@@ -9791,6 +9889,144 @@ ${inline2}` : inline2;
   }
 };
 
+// src/utils/tableNormalize.ts
+function escapedSplit2(str2) {
+  const result = [];
+  const max = str2.length;
+  let pos = 0;
+  let ch = str2.charCodeAt(pos);
+  let isEscaped = false;
+  let lastPos = 0;
+  let current = "";
+  while (pos < max) {
+    if (ch === 124) {
+      if (!isEscaped) {
+        result.push(current + str2.substring(lastPos, pos));
+        current = "";
+        lastPos = pos + 1;
+      } else {
+        current += str2.substring(lastPos, pos - 1);
+        lastPos = pos;
+      }
+    }
+    isEscaped = ch === 92;
+    pos++;
+    ch = str2.charCodeAt(pos);
+  }
+  result.push(current + str2.substring(lastPos));
+  return result;
+}
+function countCells(line) {
+  const columns = escapedSplit2(line.trim());
+  if (columns.length && columns[0] === "") {
+    columns.shift();
+  }
+  if (columns.length && columns[columns.length - 1] === "") {
+    columns.pop();
+  }
+  return columns.length;
+}
+function isDelimiterRow(line) {
+  const trimmed = line.trim();
+  if (trimmed === "" || !/^[-:|][-:|\s]*$/.test(trimmed)) {
+    return false;
+  }
+  const parts = trimmed.split("|");
+  let cells = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const t = parts[i].trim();
+    if (!t) {
+      if (i === 0 || i === parts.length - 1) {
+        continue;
+      }
+      return false;
+    }
+    if (!/^:?-+:?$/.test(t)) {
+      return false;
+    }
+    cells++;
+  }
+  return cells > 0;
+}
+function indentWidth(line) {
+  let width = 0;
+  for (const ch of line) {
+    if (ch === " ") {
+      width += 1;
+    } else if (ch === "	") {
+      width += 4;
+    } else {
+      break;
+    }
+  }
+  return width;
+}
+var FENCE_RE = /^ {0,3}(```|~~~)/;
+function endsTableBody(line) {
+  if (line.trim() === "") {
+    return true;
+  }
+  if (indentWidth(line) >= 4) {
+    return true;
+  }
+  return /^ {0,3}(#{1,6}\s|>|```|~~~|(?:[*+-]|\d{1,9}[.)])\s|(?:\*\s*){3,}$|(?:-\s*){3,}$|(?:_\s*){3,}$)/.test(
+    line
+  );
+}
+function widenRow(line, count, filler) {
+  if (count <= 0) {
+    return line;
+  }
+  const endsWithPipe = line.trimEnd().endsWith("|");
+  const closer = endsWithPipe ? "" : " |";
+  return line.trimEnd() + closer + ` ${filler} |`.repeat(count);
+}
+function normalizeTables(markdown) {
+  const lines = markdown.split("\n");
+  let inFence = false;
+  let fenceMarker = "";
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = FENCE_RE.exec(line);
+    if (fenceMatch) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fenceMatch[1];
+      } else if (line.trim().startsWith(fenceMarker)) {
+        inFence = false;
+        fenceMarker = "";
+      }
+      continue;
+    }
+    if (inFence) {
+      continue;
+    }
+    const delimiter2 = lines[i + 1];
+    if (delimiter2 === void 0 || line.indexOf("|") === -1 || line.trim() === "" || indentWidth(line) >= 4 || !isDelimiterRow(delimiter2)) {
+      continue;
+    }
+    const headerCells = countCells(line);
+    if (headerCells === 0 || headerCells !== countCells(delimiter2)) {
+      continue;
+    }
+    let maxCells = headerCells;
+    let end = i + 2;
+    for (; end < lines.length; end++) {
+      if (endsTableBody(lines[end])) {
+        break;
+      }
+      maxCells = Math.max(maxCells, countCells(lines[end]));
+    }
+    if (maxCells > headerCells) {
+      const extra = maxCells - headerCells;
+      lines[i] = widenRow(line, extra, "");
+      lines[i + 1] = widenRow(delimiter2, extra, "---");
+    }
+    i = end - 1;
+  }
+  return lines.join("\n");
+}
+
 // src/core/Translator.ts
 var Translator = class {
   constructor(plugin) {
@@ -9832,7 +10068,7 @@ var Translator = class {
     const frontmatter = extractFrontmatter(markdown);
     const contentWithoutFrontmatter = markdown.replace(/^---\n[\s\S]*?\n---/, "");
     const md = this.createMarkdownIt();
-    let renderedContent = md.render(contentWithoutFrontmatter);
+    let renderedContent = md.render(normalizeTables(contentWithoutFrontmatter));
     let frontmatterOutput = "";
     if (frontmatter && this.plugin.settings.renderMetadata) {
       frontmatterOutput += "h1. Metadata\n";
@@ -9856,7 +10092,7 @@ var Translator = class {
     const frontmatter = extractFrontmatter(markdown);
     const contentWithoutFrontmatter = markdown.replace(/^---\n[\s\S]*?\n---/, "");
     const md = this.createMarkdownIt();
-    let renderedContent = md.render(contentWithoutFrontmatter);
+    let renderedContent = md.render(normalizeTables(contentWithoutFrontmatter));
     if (this.imagesToProcess.size > 0) {
       renderedContent = await this.processImages(renderedContent);
     }
@@ -9909,6 +10145,11 @@ var Translator = class {
 
 // src/rules/confluenceBasics.ts
 function confluenceBasics(md, options) {
+  var _a2, _b;
+  const settings = (_a2 = options == null ? void 0 : options.translator) == null ? void 0 : _a2.plugin.settings;
+  const breaks = (_b = settings == null ? void 0 : settings.explicitLineBreaks) != null ? _b : DEFAULT_EXPLICIT_LINE_BREAKS;
+  listLevels(md, "mtj_confluence_list_levels");
+  blockSpacing(md, { breaks });
   md.renderer.rules.heading_open = (tokens, idx) => {
     const level = tokens[idx].tag.slice(1);
     return `h${level}. `;
@@ -9920,6 +10161,9 @@ function confluenceBasics(md, options) {
     return "";
   };
   md.renderer.rules.paragraph_close = (tokens, idx) => {
+    if (tokens[idx].level === 0) {
+      return "\n";
+    }
     let isInListItem = false;
     for (let i = idx - 1; i >= 0; i--) {
       if (tokens[i].type === "list_item_open") {
@@ -9951,34 +10195,10 @@ function confluenceBasics(md, options) {
     }
     return "\n\n";
   };
-  md.core.ruler.before("inline", "confluence_list_fix", function(state) {
-    const stack = [];
-    state.tokens.forEach((token, i) => {
-      var _a2;
-      if (token.type === "bullet_list_open" || token.type === "ordered_list_open") {
-        stack.push({
-          isOrdered: token.type === "ordered_list_open"
-        });
-        token.meta = token.meta || {};
-        token.meta.listLevel = stack.length;
-        token.meta.isOrdered = token.type === "ordered_list_open";
-      } else if (token.type === "bullet_list_close" || token.type === "ordered_list_close") {
-        stack.pop();
-        if (stack.length === 0) {
-          const closeToken = new state.Token("list_end_marker", "", 0);
-          state.tokens.splice(i + 1, 0, closeToken);
-        }
-      } else if (token.type === "list_item_open") {
-        token.meta = token.meta || {};
-        token.meta.listLevel = stack.length;
-        token.meta.isOrdered = ((_a2 = stack[stack.length - 1]) == null ? void 0 : _a2.isOrdered) || false;
-      }
-    });
-  });
   md.renderer.rules.list_item_open = (tokens, idx) => {
-    var _a2, _b;
-    const listLevel = ((_a2 = tokens[idx].meta) == null ? void 0 : _a2.listLevel) || 1;
-    const isOrdered = ((_b = tokens[idx].meta) == null ? void 0 : _b.isOrdered) || false;
+    var _a3, _b2;
+    const listLevel = ((_a3 = tokens[idx].meta) == null ? void 0 : _a3.listLevel) || 1;
+    const isOrdered = ((_b2 = tokens[idx].meta) == null ? void 0 : _b2.isOrdered) || false;
     const marker = isOrdered ? "#" : "*";
     return marker.repeat(listLevel) + " ";
   };
@@ -9987,10 +10207,6 @@ function confluenceBasics(md, options) {
   md.renderer.rules.bullet_list_close = () => "";
   md.renderer.rules.ordered_list_open = () => "";
   md.renderer.rules.ordered_list_close = () => "";
-  md.renderer.rules.list_end_marker = () => "";
-  md.renderer.rules.inline = (tokens, idx) => {
-    return tokens[idx].content;
-  };
   md.renderer.rules.text = (tokens, idx) => {
     return tokens[idx].content;
   };
@@ -10036,7 +10252,7 @@ ${code2}
 `;
   };
   md.renderer.rules.table_open = () => "";
-  md.renderer.rules.table_close = () => "\n";
+  md.renderer.rules.table_close = () => "";
   md.renderer.rules.thead_open = () => "";
   md.renderer.rules.thead_close = () => "";
   md.renderer.rules.tbody_open = () => "";
@@ -10056,11 +10272,12 @@ ${code2}
     return isHeaderRow ? "||\n" : "|\n";
   };
   md.renderer.rules.th_open = () => "||";
-  md.renderer.rules.th_close = () => "";
+  md.renderer.rules.th_close = (tokens, idx) => renderCellClose(tokens, idx);
   md.renderer.rules.td_open = () => "|";
-  md.renderer.rules.td_close = () => "";
+  md.renderer.rules.td_close = (tokens, idx) => renderCellClose(tokens, idx);
   md.renderer.rules.blockquote_open = () => "{quote}\n";
   md.renderer.rules.blockquote_close = () => "{quote}\n";
+  md.renderer.rules.hardbreak = () => "\\\\\n";
   md.renderer.rules.hr = () => "----\n";
 }
 
@@ -10119,17 +10336,15 @@ function confluenceCallouts(md, calloutConfigs) {
       const pos = state.bMarks[nextLine] + state.tShift[nextLine];
       const max = state.eMarks[nextLine];
       const line = state.src.slice(pos, max);
-      if (line.startsWith(">")) {
-        const content = line.replace(/^>\s?/, "");
-        if (content.trim() || contentLines.length > 0) {
-          contentLines.push(content);
-        }
-      } else if (line.trim() === "") {
-        break;
-      } else {
+      const bodyMatch = line.match(/^>[ \t]?(.*)$/);
+      if (bodyMatch === null) {
         break;
       }
+      contentLines.push(bodyMatch[1]);
       nextLine++;
+    }
+    while (contentLines.length > 0 && contentLines[contentLines.length - 1].trim() === "") {
+      contentLines.pop();
     }
     const confluenceMacro = CONFLUENCE_MACRO_MAP[calloutType] || "info";
     const tokenOpen = state.push("confluence_callout_open", "div", 1);
@@ -10166,8 +10381,8 @@ function confluenceCallouts(md, calloutConfigs) {
       openIdx--;
     }
     const macro = ((_b = (_a2 = tokens[openIdx]) == null ? void 0 : _a2.meta) == null ? void 0 : _b.macro) || "info";
-    return `{${macro}}
-
+    return `
+{${macro}}
 `;
   };
 }
@@ -10187,7 +10402,7 @@ var ConfluenceTranslator = class {
     const frontmatter = extractFrontmatter(markdown);
     const contentWithoutFrontmatter = markdown.replace(/^---\n[\s\S]*?\n---/, "");
     const md = new lib_default().use(confluenceBasics, { translator: this }).use(wikiLinks, { translator: this }).use(taskLists, this.plugin.settings.taskListVisualization).use(confluenceCallouts, this.plugin.settings.calloutConfigurations);
-    let renderedContent = md.render(contentWithoutFrontmatter);
+    let renderedContent = md.render(normalizeTables(contentWithoutFrontmatter));
     if (this.imagesToProcess.size > 0) {
       renderedContent = await this.processImages(renderedContent);
     }

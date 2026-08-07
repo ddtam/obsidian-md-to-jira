@@ -6,6 +6,7 @@ import { taskLists } from '../rules/taskLists';
 import { confluenceCallouts } from '../rules/confluenceCallouts';
 import MTJPlugin from '../main';
 import { ImageHandler } from '../services/ImageHandler';
+import { normalizeTables } from '../utils/tableNormalize';
 
 /**
  * Translator for converting Markdown to Confluence markup
@@ -36,7 +37,7 @@ export class ConfluenceTranslator {
 			.use(taskLists, this.plugin.settings.taskListVisualization)
 			.use(confluenceCallouts, this.plugin.settings.calloutConfigurations);
 
-		let renderedContent = md.render(contentWithoutFrontmatter);
+		let renderedContent = md.render(normalizeTables(contentWithoutFrontmatter));
 
 		if (this.imagesToProcess.size > 0) {
 			renderedContent = await this.processImages(renderedContent);

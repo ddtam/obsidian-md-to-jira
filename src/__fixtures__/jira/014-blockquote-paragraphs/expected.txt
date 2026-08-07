@@ -1,0 +1,7 @@
+{quote}
+First quoted paragraph.
+
+Second quoted paragraph.
+{quote}
+
+After the quote.

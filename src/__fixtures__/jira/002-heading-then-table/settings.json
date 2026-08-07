@@ -1,0 +1,7 @@
+{
+  "explicitLineBreaks": {
+    "afterHeading": true,
+    "beforeTable": true,
+    "afterTable": true
+  }
+}

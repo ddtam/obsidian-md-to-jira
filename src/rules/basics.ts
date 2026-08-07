@@ -3,12 +3,14 @@ import { Validator } from "src/utils/Validator";
 import { Translator } from "src/core/Translator";
 import { renderImageMarkup } from "src/utils/imageMarkup";
 import { renderCodeBlock } from "src/utils/codeBlock";
+import { renderCellClose } from "src/utils/tableCells";
+import { blockSpacing } from "src/rules/blockSpacing";
+import { listLevels } from "src/rules/listLevels";
+import { DEFAULT_EXPLICIT_LINE_BREAKS } from "src/constants";
 
 export function basics(md: MarkdownIt, options?: { translator?: Translator }): void {
     const settings = options?.translator?.plugin.settings;
-    const breakAfterHeading = settings?.explicitLineBreaks?.afterHeading ?? false;
-    const breakBeforeTable = settings?.explicitLineBreaks?.beforeTable ?? false;
-    const breakAfterTable = settings?.explicitLineBreaks?.afterTable ?? false;
+    const breaks = settings?.explicitLineBreaks ?? DEFAULT_EXPLICIT_LINE_BREAKS;
     const embedStyle = settings?.imageEmbedStyle ?? 'alt';
     const warningPanel = settings?.imageWarningPanel ?? false;
     const codeBlockStyle = settings?.codeBlockStyle ?? 'code';
@@ -19,7 +21,7 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
     };
 
     md.renderer.rules.heading_close = () => {
-        return breakAfterHeading ? '\n\\\\\n' : '\n';
+        return '\n';
     };
 
     md.renderer.rules.paragraph_open = () => {
@@ -27,6 +29,14 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
     };
 
     md.renderer.rules.paragraph_close = (tokens, idx) => {
+        // Top-level boundaries belong to the spacing token; a paragraph only
+        // terminates its own line. Nested paragraphs (list items, blockquotes)
+        // keep the original arithmetic — blockSpacing deliberately does not
+        // descend into containers.
+        if (tokens[idx].level === 0) {
+            return '\n';
+        }
+
         let isInListItem = false;
         for (let i = idx - 1; i >= 0; i--) {
             if (tokens[i].type === 'list_item_open') {
@@ -39,6 +49,13 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
         }
 
         if (isInListItem) {
+            return '\n';
+        }
+
+        // The last paragraph in a container should not push a blank line ahead
+        // of the closing markup — a blockquote ending here would otherwise emit
+        // a stray blank line before its {quote}.
+        if (tokens[idx + 1] && tokens[idx + 1].nesting === -1) {
             return '\n';
         }
 
@@ -71,34 +88,8 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
         return '\n\n';
     };
 
-    md.core.ruler.before('inline', 'list_fix', function (state) {
-        const stack: Array<{ isOrdered: boolean }> = [];
-
-        state.tokens.forEach((token, i) => {
-            if (token.type === 'bullet_list_open' || token.type === 'ordered_list_open') {
-                // Push new list level info onto the stack
-                stack.push({
-                    isOrdered: token.type === 'ordered_list_open',
-                });
-                token.meta = token.meta || {};
-                token.meta.listLevel = stack.length;
-                token.meta.isOrdered = token.type === 'ordered_list_open';
-            } else if (token.type === 'bullet_list_close' || token.type === 'ordered_list_close') {
-                // Pop the list level from the stack when closing a list
-                stack.pop();
-                // Check if we are closing the last list in the stack
-                if (stack.length === 0) {
-                    // Add a custom marker to indicate the end of the list
-                    const closeToken = new state.Token('list_end_marker', '', 0);
-                    state.tokens.splice(i + 1, 0, closeToken);
-                }
-            } else if (token.type === 'list_item_open') {
-                token.meta = token.meta || {};
-                token.meta.listLevel = stack.length;
-                token.meta.isOrdered = stack[stack.length - 1]?.isOrdered || false;
-            }
-        });
-    });
+    listLevels(md);
+    blockSpacing(md, { breaks });
 
     md.renderer.rules.list_item_open = (tokens, idx) => {
         const listLevel = tokens[idx].meta?.listLevel || 1;
@@ -125,52 +116,6 @@ export function basics(md: MarkdownIt, options?: { translator?: Translator }): v
 
     md.renderer.rules.ordered_list_close = () => {
         return ''; 
-    };
-
-    md.renderer.rules.list_end_marker = (tokens, idx) => {
-        let lastContentToken = null;
-        for (let i = idx - 1; i >= 0; i--) {
-            if ((tokens[i].type === 'paragraph_open' ||
-                 tokens[i].type === 'inline' ||
-                 tokens[i].type === 'heading_open') &&
-                tokens[i].map) {
-                lastContentToken = tokens[i];
-                break;
-            }
-            if (tokens[i].type === 'bullet_list_open' || tokens[i].type === 'ordered_list_open') {
-                break;
-            }
-        }
-
-        let nextBlockToken = null;
-        for (let i = idx + 1; i < tokens.length; i++) {
-            if (tokens[i].type === 'paragraph_open' ||
-                tokens[i].type === 'heading_open' ||
-                tokens[i].type === 'list_item_open' ||
-                tokens[i].type === 'table_open' ||
-                tokens[i].type === 'hr' ||
-                tokens[i].type === 'fence' ||
-                tokens[i].type === 'blockquote_open') {
-                nextBlockToken = tokens[i];
-                break;
-            }
-        }
-
-        if (lastContentToken && lastContentToken.map && nextBlockToken && nextBlockToken.map) {
-            const contentEnd = lastContentToken.map[1];
-            const nextStart = nextBlockToken.map[0];
-            const blankLines = nextStart - contentEnd;
-
-            if (blankLines > 0) {
-                return '\n'.repeat(blankLines);
-            }
-        }
-
-        return ''; 
-    };
-
-    md.renderer.rules.inline = (tokens, idx) => {
-        return tokens[idx].content;
     };
 
     md.renderer.rules.text = (tokens, idx) => {
@@ -253,25 +198,11 @@ ${inline}`;
     };
 
     md.renderer.rules.table_open = () => {
-        return breakBeforeTable ? '\\\\\n' : '';
+        return '';
     };
 
-    md.renderer.rules.table_close = (tokens, idx) => {
-        if (!breakAfterTable) {
-            return '\n';
-        }
-        // A heading already renders with spacing above it, so skip the trailing
-        // break when the next block is a heading to avoid doubled whitespace.
-        for (let i = idx + 1; i < tokens.length; i++) {
-            const type = tokens[i].type;
-            if (type === 'heading_open') {
-                return '\n';
-            }
-            if (type.endsWith('_open') || type === 'hr' || type === 'fence') {
-                break;
-            }
-        }
-        return '\n\\\\\n';
+    md.renderer.rules.table_close = () => {
+        return '';
     };
 
     md.renderer.rules.thead_open = () => {
@@ -317,16 +248,16 @@ ${inline}`;
         return '||';
     };
 
-    md.renderer.rules.th_close = () => {
-        return '';
+    md.renderer.rules.th_close = (tokens, idx) => {
+        return renderCellClose(tokens, idx);
     };
 
     md.renderer.rules.td_open = () => {
         return '|';
     };
 
-    md.renderer.rules.td_close = () => {
-        return '';
+    md.renderer.rules.td_close = (tokens, idx) => {
+        return renderCellClose(tokens, idx);
     };
 
     md.renderer.rules.blockquote_open = () => {
@@ -335,6 +266,10 @@ ${inline}`;
 
     md.renderer.rules.blockquote_close = () => {
         return '{quote}\n';
+    };
+
+    md.renderer.rules.hardbreak = () => {
+        return '\\\\\n';
     };
 
     md.renderer.rules.hr = () => {

@@ -1,0 +1,9 @@
+Preceding paragraph.
+
+{panel:title=Important Note}
+First line of the body.
+
+Second line after a blank line.
+{panel}
+
+Following paragraph.

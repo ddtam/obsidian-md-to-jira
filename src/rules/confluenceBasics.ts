@@ -1,12 +1,22 @@
 import * as MarkdownIt from "markdown-it";
 import { Validator } from "../utils/Validator";
 import { ConfluenceTranslator } from "../core/ConfluenceTranslator";
+import { renderCellClose } from "../utils/tableCells";
+import { blockSpacing } from "./blockSpacing";
+import { listLevels } from "./listLevels";
+import { DEFAULT_EXPLICIT_LINE_BREAKS } from "../constants";
 
 /**
  * Confluence-specific markdown-it rules
  * Similar to Jira but with some Confluence-specific syntax
  */
 export function confluenceBasics(md: MarkdownIt, options?: { translator?: ConfluenceTranslator }): void {
+	const settings = options?.translator?.plugin.settings;
+	const breaks = settings?.explicitLineBreaks ?? DEFAULT_EXPLICIT_LINE_BREAKS;
+
+	listLevels(md, 'mtj_confluence_list_levels');
+	blockSpacing(md, { breaks });
+
 	md.renderer.rules.heading_open = (tokens, idx) => {
 		const level = tokens[idx].tag.slice(1);
 		return `h${level}. `;
@@ -21,6 +31,12 @@ export function confluenceBasics(md: MarkdownIt, options?: { translator?: Conflu
 	};
 
 	md.renderer.rules.paragraph_close = (tokens, idx) => {
+		// Top-level boundaries belong to the spacing token; nested paragraphs
+		// (list items, blockquotes) keep the original arithmetic.
+		if (tokens[idx].level === 0) {
+			return '\n';
+		}
+
 		let isInListItem = false;
 		for (let i = idx - 1; i >= 0; i--) {
 			if (tokens[i].type === 'list_item_open') {
@@ -33,6 +49,12 @@ export function confluenceBasics(md: MarkdownIt, options?: { translator?: Conflu
 		}
 
 		if (isInListItem) {
+			return '\n';
+		}
+
+		// The last paragraph in a container should not push a blank line ahead
+		// of the closing markup (e.g. a blockquote's {quote}).
+		if (tokens[idx + 1] && tokens[idx + 1].nesting === -1) {
 			return '\n';
 		}
 
@@ -64,32 +86,6 @@ export function confluenceBasics(md: MarkdownIt, options?: { translator?: Conflu
 		return '\n\n';
 	};
 
-	// List handling (same as Jira)
-	md.core.ruler.before('inline', 'confluence_list_fix', function (state) {
-		const stack: Array<{ isOrdered: boolean }> = [];
-
-		state.tokens.forEach((token, i) => {
-			if (token.type === 'bullet_list_open' || token.type === 'ordered_list_open') {
-				stack.push({
-					isOrdered: token.type === 'ordered_list_open',
-				});
-				token.meta = token.meta || {};
-				token.meta.listLevel = stack.length;
-				token.meta.isOrdered = token.type === 'ordered_list_open';
-			} else if (token.type === 'bullet_list_close' || token.type === 'ordered_list_close') {
-				stack.pop();
-				if (stack.length === 0) {
-					const closeToken = new state.Token('list_end_marker', '', 0);
-					state.tokens.splice(i + 1, 0, closeToken);
-				}
-			} else if (token.type === 'list_item_open') {
-				token.meta = token.meta || {};
-				token.meta.listLevel = stack.length;
-				token.meta.isOrdered = stack[stack.length - 1]?.isOrdered || false;
-			}
-		});
-	});
-
 	md.renderer.rules.list_item_open = (tokens, idx) => {
 		const listLevel = tokens[idx].meta?.listLevel || 1;
 		const isOrdered = tokens[idx].meta?.isOrdered || false;
@@ -102,11 +98,6 @@ export function confluenceBasics(md: MarkdownIt, options?: { translator?: Conflu
 	md.renderer.rules.bullet_list_close = () => '';
 	md.renderer.rules.ordered_list_open = () => '';
 	md.renderer.rules.ordered_list_close = () => '';
-	md.renderer.rules.list_end_marker = () => '';
-
-	md.renderer.rules.inline = (tokens, idx) => {
-		return tokens[idx].content;
-	};
 
 	md.renderer.rules.text = (tokens, idx) => {
 		return tokens[idx].content;
@@ -164,7 +155,7 @@ export function confluenceBasics(md: MarkdownIt, options?: { translator?: Conflu
 
 	// Tables (same as Jira - Confluence uses same syntax)
 	md.renderer.rules.table_open = () => '';
-	md.renderer.rules.table_close = () => '\n';
+	md.renderer.rules.table_close = () => '';
 	md.renderer.rules.thead_open = () => '';
 	md.renderer.rules.thead_close = () => '';
 	md.renderer.rules.tbody_open = () => '';
@@ -186,14 +177,15 @@ export function confluenceBasics(md: MarkdownIt, options?: { translator?: Conflu
 	};
 
 	md.renderer.rules.th_open = () => '||';
-	md.renderer.rules.th_close = () => '';
+	md.renderer.rules.th_close = (tokens, idx) => renderCellClose(tokens, idx);
 	md.renderer.rules.td_open = () => '|';
-	md.renderer.rules.td_close = () => '';
+	md.renderer.rules.td_close = (tokens, idx) => renderCellClose(tokens, idx);
 
 	// Blockquotes
 	md.renderer.rules.blockquote_open = () => '{quote}\n';
 	md.renderer.rules.blockquote_close = () => '{quote}\n';
 
 	// Horizontal rule
+	md.renderer.rules.hardbreak = () => '\\\\\n';
 	md.renderer.rules.hr = () => '----\n';
 }

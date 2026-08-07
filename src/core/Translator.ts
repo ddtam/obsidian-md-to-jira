@@ -9,6 +9,7 @@ import { mentions } from '../rules/mentions';
 import { issueLinks } from '../rules/issueLinks';
 import MTJPlugin from '../main';
 import { ImageHandler } from '../services/ImageHandler';
+import { normalizeTables } from '../utils/tableNormalize';
 
 export interface CollectedImage {
 	src: string;
@@ -72,7 +73,7 @@ export class Translator {
 		const contentWithoutFrontmatter = markdown.replace(/^---\n[\s\S]*?\n---/, '');
 
 		const md = this.createMarkdownIt();
-		let renderedContent = md.render(contentWithoutFrontmatter);
+		let renderedContent = md.render(normalizeTables(contentWithoutFrontmatter));
 
 		let frontmatterOutput = '';
 		if (frontmatter && this.plugin.settings.renderMetadata) {
@@ -103,7 +104,7 @@ export class Translator {
 		const contentWithoutFrontmatter = markdown.replace(/^---\n[\s\S]*?\n---/, '');
 
 		const md = this.createMarkdownIt();
-		let renderedContent = md.render(contentWithoutFrontmatter);
+		let renderedContent = md.render(normalizeTables(contentWithoutFrontmatter));
 
 		if (this.imagesToProcess.size > 0) {
 			renderedContent = await this.processImages(renderedContent);

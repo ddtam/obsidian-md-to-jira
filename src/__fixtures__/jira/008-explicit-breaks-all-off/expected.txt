@@ -1,0 +1,10 @@
+h2. Heading before fence
+
+{code:js}
+const answer = 42;
+{code}
+
+Paragraph after fence.
+
+||H1||H2||
+|a|b|

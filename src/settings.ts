@@ -10,6 +10,7 @@ import {
 	TextComponent,
 } from "obsidian";
 import MTJPlugin from "./main";
+import { DEFAULT_EXPLICIT_LINE_BREAKS } from "./constants";
 import { calloutTypes } from "./utils/calloutTypes";
 import { calloutTypesDefaultColors } from "./utils/calloutTypeDefaultColors";
 import { calloutIcons } from "./utils/calloutIcons";
@@ -114,11 +115,7 @@ export const DEFAULT_SETTINGS: MTJPluginSettings = {
 	showPreviewBeforeCopy: false,
 	imageEmbedStyle: 'thumbnail',
 	imageWarningPanel: false,
-	explicitLineBreaks: {
-		afterHeading: true,
-		beforeTable: true,
-		afterTable: true,
-	},
+	explicitLineBreaks: { ...DEFAULT_EXPLICIT_LINE_BREAKS },
 	codeBlockStyle: 'code',
 };
 
@@ -213,9 +210,19 @@ export default class MTJSettingsTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Explicit line breaks")
+			.setDesc(
+				"Headings own their own leading space, and any boundary between two blocks emits at most one forced break (\\\\). " +
+				"If two of the toggles below both apply to the same boundary, only one break is inserted. " +
+				"These apply to both Jira and Confluence output."
+			)
+			.setHeading();
+
+		new Setting(containerEl)
 			.setName("Explicit line break after headings")
 			.setDesc(
-				"Insert a Jira forced line break (\\\\) on its own line after each heading so Jira renders visible whitespace below."
+				"Insert a Jira forced line break (\\\\) on its own line after each heading so Jira renders visible whitespace below. " +
+				"If a table follows and \"before tables\" is also on, only one break is emitted."
 			)
 			.addToggle((toggle) =>
 				toggle
@@ -243,7 +250,8 @@ export default class MTJSettingsTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Explicit line break after tables")
 			.setDesc(
-				"Insert a Jira forced line break (\\\\) on its own line after each table so Jira renders visible whitespace below."
+				"Insert a Jira forced line break (\\\\) on its own line after each table so Jira renders visible whitespace below. " +
+				"Suppressed when the next block is a heading, which already renders its own spacing."
 			)
 			.addToggle((toggle) =>
 				toggle

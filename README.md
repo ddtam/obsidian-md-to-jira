@@ -33,8 +33,10 @@ This fork adds options under **Settings → Markdown to Jira Plus → Output for
 
 - **Image embed style** — `!path|thumbnail!` by default (or `|alt=...`, or plain `!path!`).
 - **Warning panel** — off by default, so local images no longer emit a yellow `{panel}` warning around the markup (toggleable).
-- **Explicit line breaks** — insert `\\` after headings and tables so Jira renders visible whitespace (toggleable per element).
+- **Explicit line breaks** — insert `\\` after headings and tables so Jira renders visible whitespace (toggleable per element). Headings own their own leading space, and any boundary emits at most one break, so two toggles applying to the same boundary never double up. These apply to Confluence output too.
 - **Code block style** — `{code:lang}` (syntax highlighted) or `{noformat}` (plain) for older Jira instances that don't render `{code}` macros.
+
+Spacing between blocks is decided in one place (`src/rules/blockSpacing.ts`), which reproduces the blank lines from your note and adds the forced breaks. Tables are always rectangular: short rows are padded with empty cells so the pipe count matches, and rows wider than the header keep their extra cells instead of being truncated.
 
 When a conversion includes local images, the preview modal lists them with **Reveal** / **Copy path** / **Open all in folder** — the last stages every image into one temp folder so you can select all and drag them into Jira together.
 

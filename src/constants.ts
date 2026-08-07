@@ -27,3 +27,21 @@ export const PLUGIN_INFO = {
 	NAME: 'Markdown to Jira',
 	LOG_PREFIX: '[MTJPlugin]',
 };
+
+/**
+ * Default explicit-line-break policy. Lives here rather than in settings.ts so
+ * that rule modules can fall back to it without importing the settings tab
+ * (which extends an obsidian UI class).
+ */
+export const DEFAULT_EXPLICIT_LINE_BREAKS = {
+	afterHeading: true,
+	beforeTable: true,
+	afterTable: true,
+};
+
+export const SPACING = {
+	/** Synthetic token type carrying the separator before each top-level block. */
+	TOKEN: 'mtj_spacing',
+	/** Jira/Confluence forced line break, on a line of its own. */
+	FORCED_BREAK: '\\\\',
+} as const;

@@ -10,6 +10,8 @@
 		"test": "jest",
 		"test:watch": "jest --watch",
 		"test:coverage": "jest --coverage",
+		"test:golden": "jest goldenFixtures",
+		"test:golden:update": "UPDATE_GOLDEN=1 jest goldenFixtures",
 		"brat:build": "npm run build && node scripts/brat-publish.mjs",
 		"brat:release": "node scripts/brat-release.mjs"
 	},

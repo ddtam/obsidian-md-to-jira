@@ -1,0 +1,9 @@
+Preceding paragraph.
+
+{info:title=Important Note}
+First line of the body.
+
+Second line after a blank line.
+{info}
+
+Following paragraph.

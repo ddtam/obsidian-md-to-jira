@@ -73,22 +73,19 @@ export function confluenceCallouts(md: MarkdownIt, calloutConfigs: MTJCallout[])
 			const max = state.eMarks[nextLine];
 			const line = state.src.slice(pos, max);
 
-			// Check if line continues the callout
-			if (line.startsWith('>')) {
-				// Remove leading '>' and optional space
-				const content = line.replace(/^>\s?/, '');
-				// Skip empty lines that are just continuation markers
-				if (content.trim() || contentLines.length > 0) {
-					contentLines.push(content);
-				}
-			} else if (line.trim() === '') {
-				// Empty line might end the callout
-				break;
-			} else {
-				// Non-continuation line ends the callout
+			// A bare '>' is how Obsidian writes a blank line inside a callout;
+			// it continues the block rather than ending it.
+			const bodyMatch = line.match(/^>[ \t]?(.*)$/);
+			if (bodyMatch === null) {
 				break;
 			}
+			contentLines.push(bodyMatch[1]);
 			nextLine++;
+		}
+
+		// Do not let a trailing bare '>' add a dangling blank line.
+		while (contentLines.length > 0 && contentLines[contentLines.length - 1].trim() === '') {
+			contentLines.pop();
 		}
 
 		// Determine Confluence macro type
@@ -138,6 +135,6 @@ export function confluenceCallouts(md: MarkdownIt, calloutConfigs: MTJCallout[])
 		}
 
 		const macro = tokens[openIdx]?.meta?.macro || 'info';
-		return `{${macro}}\n\n`;
+		return `\n{${macro}}\n`;
 	};
 }

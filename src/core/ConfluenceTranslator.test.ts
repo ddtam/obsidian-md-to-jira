@@ -12,35 +12,9 @@ jest.mock('obsidian', () => ({
 	requestUrl: jest.fn(),
 }));
 
-jest.mock('../services/ImageHandler', () => {
-	return {
-		ImageHandler: jest.fn().mockImplementation(() => {
-			return {
-				handleImage: jest.fn().mockImplementation(async (src: string, alt: string) => {
-					const isUrlOrBase64 = src.startsWith('http://') ||
-						src.startsWith('https://') ||
-						src.startsWith('data:image/');
-
-					if (isUrlOrBase64) {
-						return {
-							jiraMarkup: `!${src}|alt=${alt}!`,
-							success: true
-						};
-					} else {
-						return {
-							jiraMarkup: `{panel:borderColor=#ffecb5|bgColor=#fff3cd}
-{color:#664d03}+*Warning:*+ The following file must be transferred manually via drag & drop: *${src}*{color}
-{panel}
-
-!${src}|alt=${alt}!`,
-							success: true
-						};
-					}
-				})
-			};
-		})
-	};
-});
+// Uses the manual mock in src/services/__mocks__/ImageHandler.ts, shared with
+// the golden fixtures so both render images identically.
+jest.mock('../services/ImageHandler');
 
 describe('ConfluenceTranslator - Markdown to Confluence Conversion', () => {
 	let translator: ConfluenceTranslator;
@@ -195,6 +169,19 @@ describe('ConfluenceTranslator - Markdown to Confluence Conversion', () => {
 			const result = await translator.convertMarkdownToConfluence(markdown);
 			expect(result).toContain('{tip:title=Pro tip}');
 			expect(result).toContain('{tip}');
+		});
+
+		test('a bare ">" blank line keeps the body inside the macro', async () => {
+			const markdown =
+				'> [!NOTE] Title\n> First line.\n>\n> Second line after a blank.';
+			const result = await translator.convertMarkdownToConfluence(markdown);
+			expect(result).not.toContain('{quote}');
+			const body = result.slice(
+				result.indexOf('{info:'),
+				result.lastIndexOf('{info}')
+			);
+			expect(body).toContain('First line.');
+			expect(body).toContain('Second line after a blank.');
 		});
 
 		test('should convert IMPORTANT callout to note macro', async () => {

@@ -1,0 +1,10 @@
+Intro paragraph.
+
+{quote}
+A plain blockquote.
+Second quoted line.
+{quote}
+
+----
+
+After the rule.
