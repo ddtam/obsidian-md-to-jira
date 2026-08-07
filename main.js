@@ -9267,6 +9267,9 @@ function basics(md, options) {
     if (isInListItem) {
       return "\n";
     }
+    if (tokens[idx + 1] && tokens[idx + 1].nesting === -1) {
+      return "\n";
+    }
     const openToken = tokens[idx - 2];
     let nextBlockToken = null;
     for (let i = idx + 1; i < tokens.length; i++) {
@@ -10175,6 +10178,9 @@ function confluenceBasics(md, options) {
       }
     }
     if (isInListItem) {
+      return "\n";
+    }
+    if (tokens[idx + 1] && tokens[idx + 1].nesting === -1) {
       return "\n";
     }
     const openToken = tokens[idx - 2];

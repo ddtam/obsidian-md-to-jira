@@ -1,7 +1,7 @@
 {
   "id": "obsidian-md-to-jira-plus",
   "name": "Markdown to Jira Plus",
-  "version": "1.0.1-plus.3",
+  "version": "1.0.1-plus.4",
   "minAppVersion": "1.2.3",
   "description": "Convert notes or selections to Jira/Confluence markup and vice versa. Fork of muckmuck96/obsidian-md-to-jira with image-embed, line-break, and upload-list customizations.",
   "author": "Derek Tam",
