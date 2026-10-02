@@ -161,3 +161,14 @@
 	gap: 6px;
 	flex-shrink: 0;
 }
+
+/* Emoticon preview beside each icon dropdown in the settings tab */
+.mtj-icon-preview {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	font-size: 16px;
+	line-height: 1;
+}

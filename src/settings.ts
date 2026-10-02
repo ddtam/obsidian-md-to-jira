@@ -14,6 +14,36 @@ import { DEFAULT_EXPLICIT_LINE_BREAKS } from "./constants";
 import { calloutTypes } from "./utils/calloutTypes";
 import { calloutTypesDefaultColors } from "./utils/calloutTypeDefaultColors";
 import { calloutIcons } from "./utils/calloutIcons";
+import { DEFAULT_TASK_MAPPING, TASK_STATES } from "./utils/taskStates";
+import { renderJiraIcon } from "./utils/jiraIconPreview";
+
+/** Emoticon markup to its dropdown label, in catalogue order. */
+const ICON_OPTIONS: Record<string, string> = Object.fromEntries(
+	Object.values(calloutIcons).map((i) => [i.jiraTag, i.displayName])
+);
+
+/**
+ * An emoticon dropdown with a preview of the chosen icon to its left. A
+ * native select option holds text only, so the preview is what shows the
+ * icon itself, and it follows the selection.
+ */
+function addIconDropdown(
+	setting: Setting,
+	value: string,
+	onChange: (value: string) => Promise<void>,
+): void {
+	const preview = setting.controlEl.createSpan({ cls: "mtj-icon-preview" });
+	renderJiraIcon(preview, value);
+	setting.addDropdown((dropdown: DropdownComponent) => {
+		dropdown
+			.addOptions(ICON_OPTIONS)
+			.setValue(value)
+			.onChange(async (v: string) => {
+				renderJiraIcon(preview, v);
+				await onChange(v);
+			});
+	});
+}
 import { ImgbbValidator } from "./services/ImgbbValidator";
 import { MESSAGES } from "./constants";
 
@@ -94,14 +124,7 @@ export const DEFAULT_SETTINGS: MTJPluginSettings = {
 	version: '0.0.0',
 	taskListVisualization: {
 		enabled: true,
-		mapping: {
-			'[ ]': '(/)',     // Unchecked - checkbox
-			'[x]': '(on)',    // Checked - light bulb on
-			'[X]': '(on)',    // Checked (alternate)
-			'[>]': '(*b)',    // In progress - blue star
-			'[-]': '(-)',     // Cancelled - minus
-			'[/]': '(*y)',    // Partial - yellow star
-		},
+		mapping: { ...DEFAULT_TASK_MAPPING },
 	},
 	outputFormat: 'jira',
 	autoDetectJiraPaste: false,
@@ -112,7 +135,9 @@ export const DEFAULT_SETTINGS: MTJPluginSettings = {
 		projectKeys: '',
 		baseUrl: '',
 	},
-	showPreviewBeforeCopy: false,
+	// On by default: the preview modal is where local images are listed
+	// and staged into one folder for dragging into Jira.
+	showPreviewBeforeCopy: true,
 	imageEmbedStyle: 'thumbnail',
 	imageWarningPanel: false,
 	explicitLineBreaks: { ...DEFAULT_EXPLICIT_LINE_BREAKS },
@@ -163,7 +188,7 @@ export default class MTJSettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Show preview before copy")
-			.setDesc("Display a preview modal showing the converted markup before copying to clipboard.")
+			.setDesc("Display a preview modal showing the converted markup before copying to clipboard. A Jira conversion with local images always shows it, since that is where the images are listed and staged into one folder.")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.showPreviewBeforeCopy)
@@ -319,14 +344,7 @@ export default class MTJSettingsTab extends PluginSettingTab {
 				.setDesc("Map task checkbox states to Jira emoticons. Common states are preconfigured.")
 				.setHeading();
 
-			const taskStates = [
-				{ key: '[ ]', label: 'Unchecked (incomplete)', default: '(/)' },
-				{ key: '[x]', label: 'Checked (complete)', default: '(on)' },
-				{ key: '[X]', label: 'Checked (complete, uppercase)', default: '(on)' },
-				{ key: '[>]', label: 'In progress / forwarded', default: '(*b)' },
-				{ key: '[-]', label: 'Cancelled / removed', default: '(-)' },
-				{ key: '[/]', label: 'Partially complete', default: '(*y)' },
-			];
+			const taskStates = TASK_STATES;
 
 			for (const taskState of taskStates) {
 				if (!this.plugin.settings.taskListVisualization.mapping[taskState.key]) {
@@ -338,25 +356,14 @@ export default class MTJSettingsTab extends PluginSettingTab {
 				new Setting(containerEl)
 					.setName(taskState.label)
 					.setDesc(`Markdown: \`- ${taskState.key} Task text\``)
-					.addDropdown((dropdown: DropdownComponent) => {
-						dropdown
-							.addOptions(Object.entries(calloutIcons).reduce(
-								(acc, [key, { jiraTag, displayName }]) => ({
-									...acc,
-									[jiraTag]: displayName,
-								}),
-								{}
-							))
-							.setValue(currentValue)
-							.onChange(async (value: string) => {
-								this.plugin.settings.taskListVisualization.mapping[taskState.key] = value;
-								await this.plugin.saveSettings();
-							});
-					})
+					.then((s) => addIconDropdown(s, currentValue, async (value) => {
+						this.plugin.settings.taskListVisualization.mapping[taskState.key] = value;
+						await this.plugin.saveSettings();
+					}))
 					.addButton((button: ButtonComponent) => {
 						button
 							.setButtonText("Reset")
-							.setTooltip(`Reset to default: ${taskState.default}`)
+							.setTooltip(`Reset to default: ${ICON_OPTIONS[taskState.default] ?? taskState.default}`)
 							.onClick(async () => {
 								this.plugin.settings.taskListVisualization.mapping[taskState.key] = taskState.default;
 								await this.plugin.saveSettings();
@@ -388,21 +395,10 @@ export default class MTJSettingsTab extends PluginSettingTab {
 								}
 							});
 					})
-					.addDropdown((dropdown: DropdownComponent) => {
-						dropdown
-							.addOptions(Object.entries(calloutIcons).reduce(
-								(acc, [key, { jiraTag, displayName }]) => ({
-									...acc,
-									[jiraTag]: displayName,
-								}),
-								{}
-							))
-							.setValue(value)
-							.onChange(async (value: string) => {
-								this.plugin.settings.taskListVisualization.mapping[key] = value;
-								await this.plugin.saveSettings();
-							});
-					})
+					.then((s) => addIconDropdown(s, value, async (value) => {
+						this.plugin.settings.taskListVisualization.mapping[key] = value;
+						await this.plugin.saveSettings();
+					}))
 					.addExtraButton((button: ExtraButtonComponent) => {
 						button.setIcon("cross").setTooltip("Delete mapping").onClick(async () => {
 							delete this.plugin.settings.taskListVisualization.mapping[key];
@@ -584,23 +580,10 @@ export default class MTJSettingsTab extends PluginSettingTab {
 
 				new Setting(containerEl)
 					.setName("Choose title icon")
-					.addDropdown((dropdown: DropdownComponent) => {
-						dropdown
-							.addOptions(
-								Object.entries(calloutIcons).reduce(
-									(acc, [key, { jiraTag, displayName }]) => ({
-										...acc,
-										[jiraTag]: displayName,
-									}),
-									{}
-								)
-							)
-							.setValue(val.titleIcon)
-							.onChange(async (value) => {
-								settings.calloutConfigurations[i].titleIcon = value;
-								await this.plugin.saveSettings();
-							});
-					});
+					.then((s) => addIconDropdown(s, val.titleIcon, async (value) => {
+						settings.calloutConfigurations[i].titleIcon = value;
+						await this.plugin.saveSettings();
+					}));
 
 				new Setting(containerEl)
 					.setName(`Choose title text color:`)

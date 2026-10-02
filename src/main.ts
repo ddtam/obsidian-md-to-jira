@@ -1,4 +1,4 @@
-import { Editor, Notice, Plugin } from "obsidian";
+import { Editor, MarkdownView, Notice, Plugin } from "obsidian";
 
 import MTJSettingsTab, {
 	DEFAULT_SETTINGS,
@@ -12,12 +12,21 @@ import { PreviewModal } from "./modals/PreviewModal";
 import { ClipboardDetector } from "./services/ClipboardDetector";
 import { ConversionOfferModal } from "./modals/ConversionOfferModal";
 import { MESSAGES } from "./constants";
+import { tableAt } from "./utils/tableAtLine";
+import { DEFAULT_TASK_MAPPING, isLegacyTaskMapping } from "./utils/taskStates";
+
+/** The CodeMirror view behind an Obsidian editor, used only for posAtDOM. */
+type CmView = { posAtDOM(node: Node): number };
 
 export default class MTJPlugin extends Plugin {
 	settings: MTJPluginSettings;
 	translator: Translator;
 	confluenceTranslator: ConfluenceTranslator;
 	reverseTranslator: ReverseTranslator;
+
+	// The table widget the user last focused, recorded on focus because
+	// opening the command palette moves focus away before the command runs.
+	private lastTable: { view: MarkdownView; line: number } | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -39,15 +48,36 @@ export default class MTJPlugin extends Plugin {
 		this.confluenceTranslator = new ConfluenceTranslator(this);
 		this.reverseTranslator = new ReverseTranslator();
 
-		// Convert note to Jira markup
+		// Convert note to Jira markup. Reads the view's text rather than
+		// an editor, so it also works in reading view.
 		this.addCommand({
 			id: "mtj-convert-note-to-jira",
 			name: "Note to Jira markup (clipboard)",
-			editorCallback: async (editor: Editor) => {
-				const content = editor.getDoc().getValue();
-				await this.convertToJira(content);
+			checkCallback: (checking: boolean) => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view) return false;
+				if (!checking) void this.convertToJira(view.getViewData());
+				return true;
 			},
 		});
+
+		// Convert the table under the cursor to Jira markup. Live Preview's
+		// table widget keeps its own cell selection, so selecting a table
+		// and using the selection command loses the image embeds.
+		this.addCommand({
+			id: "mtj-convert-table-to-jira",
+			name: "Table under cursor to Jira markup (clipboard)",
+			checkCallback: (checking: boolean) => {
+				const table = this.tableUnderCursor();
+				if (table === null) return false;
+				if (!checking) void this.convertToJira(table);
+				return true;
+			},
+		});
+
+		this.registerDomEvent(document, "focusin", (evt: FocusEvent) =>
+			this.recordTableFocus(evt.target)
+		);
 
 		// Convert selection to Jira markup
 		this.addCommand({
@@ -82,13 +112,15 @@ export default class MTJPlugin extends Plugin {
 			},
 		});
 
-		// Convert note to Confluence markup
+		// Convert note to Confluence markup, in either view mode
 		this.addCommand({
 			id: "mtj-convert-note-to-confluence",
 			name: "Note to Confluence markup (clipboard)",
-			editorCallback: async (editor: Editor) => {
-				const content = editor.getDoc().getValue();
-				await this.convertToConfluence(content);
+			checkCallback: (checking: boolean) => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view) return false;
+				if (!checking) void this.convertToConfluence(view.getViewData());
+				return true;
 			},
 		});
 
@@ -145,6 +177,40 @@ export default class MTJPlugin extends Plugin {
 		);
 
 		this.addSettingTab(new MTJSettingsTab(this.app, this));
+	}
+
+	/**
+	 * Remember which table widget has focus. Focus entering any other part
+	 * of an editor clears it, so a stale table is never converted; focus
+	 * moving to the command palette leaves it, which is the point.
+	 */
+	private recordTableFocus(target: EventTarget | null): void {
+		if (!(target instanceof HTMLElement)) return;
+		const widget = target.closest(".cm-table-widget");
+		if (!widget) {
+			if (target.closest(".markdown-source-view")) this.lastTable = null;
+			return;
+		}
+		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+			const view = leaf.view;
+			if (!(view instanceof MarkdownView)) continue;
+			if (!view.containerEl.contains(widget)) continue;
+			const cm = (view.editor as unknown as { cm?: CmView }).cm;
+			if (!cm) return;
+			const line = view.editor.offsetToPos(cm.posAtDOM(widget)).line;
+			this.lastTable = { view, line };
+			return;
+		}
+	}
+
+	/** Source of the table under the cursor in editing view, or null. */
+	private tableUnderCursor(): string | null {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view || view.getMode() !== "source") return null;
+		const line = this.lastTable?.view === view
+			? this.lastTable.line
+			: view.editor.getCursor().line;
+		return tableAt(view.editor.getValue().split("\n"), line);
 	}
 
 	async convertToJira(content: string): Promise<void> {
@@ -249,15 +315,14 @@ export default class MTJPlugin extends Plugin {
 				console.log('[MTJPlugin] Migrating task list visualization to new defaults');
 				loadedData.taskListVisualization = {
 					enabled: true,
-					mapping: {
-						'[ ]': '(/)',
-						'[x]': '(on)',
-						'[X]': '(on)',
-						'[>]': '(*b)',
-						'[-]': '(-)',
-						'[/]': '(*y)',
-					}
+					mapping: { ...DEFAULT_TASK_MAPPING },
 				};
+				needsMigration = true;
+			} else if (tlv?.mapping && isLegacyTaskMapping(tlv.mapping)) {
+				// The pre-plus.5 defaults, never edited: replace them, since
+				// they showed an open task as a tick and a done one as a bulb.
+				console.log('[MTJPlugin] Replacing legacy task mapping defaults');
+				tlv.mapping = { ...DEFAULT_TASK_MAPPING };
 				needsMigration = true;
 			}
 
