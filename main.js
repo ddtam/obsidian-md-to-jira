@@ -306,95 +306,246 @@ var calloutIcons = {
     displayName: "None",
     jiraTag: "none"
   },
-  smile: {
-    displayName: "\u{1F642}",
-    jiraTag: ":)"
-  },
-  sad: {
-    displayName: "\u{1F641}",
-    jiraTag: ":("
-  },
-  tongue: {
-    displayName: "\u{1F60B}",
-    jiraTag: ":P"
-  },
-  grinning: {
-    displayName: "\u{1F600}",
-    jiraTag: ":D"
-  },
-  winking: {
-    displayName: "\u{1F609}",
-    jiraTag: ";)"
-  },
-  thumbUp: {
-    displayName: "\u{1F44D}",
-    jiraTag: "(y)"
-  },
-  thumbDown: {
-    displayName: "\u{1F44E}",
-    jiraTag: "(n)"
-  },
-  info: {
-    displayName: "\u{1F6C8}",
-    jiraTag: "(i)"
-  },
   check: {
-    displayName: "\u2705",
+    displayName: "Green tick (/)",
     jiraTag: "(/)"
   },
   cross: {
-    displayName: "\u274C",
+    displayName: "Red cross (x)",
     jiraTag: "(x)"
   },
-  warn: {
-    displayName: "\u26A0",
-    jiraTag: "(!)"
-  },
-  plus: {
-    displayName: "\u2295",
-    jiraTag: "(+)"
-  },
-  minus: {
-    displayName: "\u229F",
-    jiraTag: "(-)"
-  },
-  question: {
-    displayName: "?",
-    jiraTag: "(?)"
-  },
   lightBulbOn: {
-    displayName: "\u{1F4A1}",
+    displayName: "Light bulb, lit (on)",
     jiraTag: "(on)"
   },
   lightBulbOff: {
-    displayName: "\u{1F4A1}(off)",
+    displayName: "Light bulb, unlit (off)",
     jiraTag: "(off)"
   },
+  blueStar: {
+    displayName: "Blue star (*b)",
+    jiraTag: "(*b)"
+  },
+  yellowStar: {
+    displayName: "Yellow star (*y)",
+    jiraTag: "(*y)"
+  },
   redStar: {
-    displayName: "\u2B50(red)",
+    displayName: "Red star (*r)",
     jiraTag: "(*r)"
   },
   greenStar: {
-    displayName: "\u2B50(green)",
+    displayName: "Green star (*g)",
     jiraTag: "(*g)"
   },
-  blueStar: {
-    displayName: "\u2B50(blue)",
-    jiraTag: "(*b)"
-  },
   goldStar: {
-    displayName: "\u2B50",
+    displayName: "Gold star (*)",
     jiraTag: "(*)"
   },
+  info: {
+    displayName: "Info (i)",
+    jiraTag: "(i)"
+  },
+  warn: {
+    displayName: "Warning (!)",
+    jiraTag: "(!)"
+  },
+  question: {
+    displayName: "Question (?)",
+    jiraTag: "(?)"
+  },
+  plus: {
+    displayName: "Plus (+)",
+    jiraTag: "(+)"
+  },
+  minus: {
+    displayName: "Minus (-)",
+    jiraTag: "(-)"
+  },
   redFlag: {
-    displayName: "\u2690(red)",
+    displayName: "Red flag (flag)",
     jiraTag: "(flag)"
   },
   whiteFlag: {
-    displayName: "\u2690(white)",
+    displayName: "Flag, cleared (flagoff)",
     jiraTag: "(flagoff)"
+  },
+  thumbUp: {
+    displayName: "Thumbs up (y)",
+    jiraTag: "(y)"
+  },
+  thumbDown: {
+    displayName: "Thumbs down (n)",
+    jiraTag: "(n)"
+  },
+  smile: {
+    displayName: "Smile :)",
+    jiraTag: ":)"
+  },
+  sad: {
+    displayName: "Sad :(",
+    jiraTag: ":("
+  },
+  tongue: {
+    displayName: "Tongue :P",
+    jiraTag: ":P"
+  },
+  grinning: {
+    displayName: "Grin :D",
+    jiraTag: ":D"
+  },
+  winking: {
+    displayName: "Wink ;)",
+    jiraTag: ";)"
   }
 };
+
+// src/utils/taskStates.ts
+var TASK_STATES = [
+  { key: "[ ]", label: "Unchecked (to do)", default: "(off)" },
+  { key: "[x]", label: "Checked (done)", default: "(/)" },
+  { key: "[X]", label: "Checked (done, uppercase)", default: "(/)" },
+  { key: "[>]", label: "In progress / forwarded", default: "(*b)" },
+  { key: "[-]", label: "Cancelled", default: "(x)" },
+  { key: "[/]", label: "Partially complete", default: "(*y)" }
+];
+var DEFAULT_TASK_MAPPING = Object.fromEntries(TASK_STATES.map((s) => [s.key, s.default]));
+var LEGACY_TASK_MAPPING = {
+  "[ ]": "(/)",
+  "[x]": "(on)",
+  "[X]": "(on)",
+  "[>]": "(*b)",
+  "[-]": "(-)",
+  "[/]": "(*y)"
+};
+function isLegacyTaskMapping(m) {
+  const keys = Object.keys(m);
+  const legacy = Object.keys(LEGACY_TASK_MAPPING);
+  return keys.length === legacy.length && legacy.every((k) => m[k] === LEGACY_TASK_MAPPING[k]);
+}
+
+// src/utils/jiraIconPreview.ts
+var GREEN = "#36B37E";
+var RED = "#DE350B";
+var BLUE = "#0065FF";
+var YELLOW = "#FFAB00";
+var GOLD = "#FFC400";
+var GREY = "#A5ADBA";
+var INK = "#42526E";
+var STAR = "8,1 10.1,5.6 15,6.1 11.3,9.4 12.4,14.3 8,11.8 3.6,14.3 4.7,9.4 1,6.1 5.9,5.6";
+function disc(fill) {
+  return { tag: "circle", attr: { cx: "8", cy: "8", r: "7", fill } };
+}
+function stroke(d, colour = "white") {
+  return { tag: "path", attr: {
+    d,
+    fill: "none",
+    stroke: colour,
+    "stroke-width": "2",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round"
+  } };
+}
+function glyph(text2, fill = "white") {
+  return { tag: "text", attr: {
+    x: "8",
+    y: "12",
+    "text-anchor": "middle",
+    "font-size": "11",
+    "font-weight": "700",
+    "font-family": "sans-serif",
+    fill,
+    "data-text": text2
+  } };
+}
+function star(fill) {
+  return [{ tag: "polygon", attr: { points: STAR, fill } }];
+}
+function bulb(lit) {
+  return [
+    { tag: "circle", attr: lit ? { cx: "8", cy: "6.5", r: "4.8", fill: GOLD } : {
+      cx: "8",
+      cy: "6.5",
+      r: "4.3",
+      fill: "none",
+      stroke: GREY,
+      "stroke-width": "1.4"
+    } },
+    { tag: "rect", attr: {
+      x: "6",
+      y: "11.5",
+      width: "4",
+      height: "3",
+      rx: "0.8",
+      fill: lit ? INK : GREY
+    } }
+  ];
+}
+function flag(raised) {
+  return [
+    stroke("M3.5 2 V15", INK),
+    { tag: "path", attr: raised ? { d: "M4 2.5 H13 L11 6 L13 9.5 H4 Z", fill: RED } : {
+      d: "M4 2.5 H13 L11 6 L13 9.5 H4 Z",
+      fill: "none",
+      stroke: GREY,
+      "stroke-width": "1.2"
+    } }
+  ];
+}
+var SHAPES = {
+  "(/)": [disc(GREEN), stroke("M4.6 8.3 L7 10.6 L11.4 5.6")],
+  "(x)": [disc(RED), stroke("M5.5 5.5 L10.5 10.5 M10.5 5.5 L5.5 10.5")],
+  "(i)": [disc(BLUE), glyph("i")],
+  "(?)": [disc(BLUE), glyph("?")],
+  "(+)": [disc(GREEN), stroke("M8 4.5 V11.5 M4.5 8 H11.5")],
+  "(-)": [disc(RED), stroke("M4.5 8 H11.5")],
+  "(!)": [
+    { tag: "path", attr: { d: "M8 1.5 L15 14 H1 Z", fill: YELLOW } },
+    glyph("!", INK)
+  ],
+  "(on)": bulb(true),
+  "(off)": bulb(false),
+  "(*)": star(GOLD),
+  "(*y)": star(YELLOW),
+  "(*r)": star(RED),
+  "(*g)": star(GREEN),
+  "(*b)": star(BLUE),
+  "(flag)": flag(true),
+  "(flagoff)": flag(false)
+};
+var EMOJI = {
+  "(y)": "\u{1F44D}",
+  "(n)": "\u{1F44E}",
+  ":)": "\u{1F642}",
+  ":(": "\u{1F641}",
+  ":P": "\u{1F60B}",
+  ":D": "\u{1F600}",
+  ";)": "\u{1F609}"
+};
+function renderJiraIcon(el, tag) {
+  el.empty();
+  el.setAttr("aria-label", tag === "none" ? "No icon" : tag);
+  if (EMOJI[tag]) {
+    el.setText(EMOJI[tag]);
+    return;
+  }
+  const shapes = SHAPES[tag];
+  if (!shapes) return;
+  const svg = make("svg", { viewBox: "0 0 16 16", width: "18", height: "18" });
+  for (const s of shapes) {
+    const { "data-text": text2, ...attr } = s.attr;
+    const node = make(s.tag, attr);
+    if (text2) node.textContent = text2;
+    svg.appendChild(node);
+  }
+  el.appendChild(svg);
+}
+var SVG_NS = "http://www.w3.org/2000/svg";
+function make(tag, attr) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attr)) node.setAttribute(k, v);
+  return node;
+}
 
 // src/services/ImgbbValidator.ts
 var import_obsidian = require("obsidian");
@@ -458,6 +609,19 @@ var ImgbbValidator = class {
 };
 
 // src/settings.ts
+var ICON_OPTIONS = Object.fromEntries(
+  Object.values(calloutIcons).map((i) => [i.jiraTag, i.displayName])
+);
+function addIconDropdown(setting, value, onChange) {
+  const preview = setting.controlEl.createSpan({ cls: "mtj-icon-preview" });
+  renderJiraIcon(preview, value);
+  setting.addDropdown((dropdown) => {
+    dropdown.addOptions(ICON_OPTIONS).setValue(value).onChange(async (v) => {
+      renderJiraIcon(preview, v);
+      await onChange(v);
+    });
+  });
+}
 var DEFAULT_SETTINGS = {
   renderMetadata: true,
   temp: {
@@ -474,20 +638,7 @@ var DEFAULT_SETTINGS = {
   version: "0.0.0",
   taskListVisualization: {
     enabled: true,
-    mapping: {
-      "[ ]": "(/)",
-      // Unchecked - checkbox
-      "[x]": "(on)",
-      // Checked - light bulb on
-      "[X]": "(on)",
-      // Checked (alternate)
-      "[>]": "(*b)",
-      // In progress - blue star
-      "[-]": "(-)",
-      // Cancelled - minus
-      "[/]": "(*y)"
-      // Partial - yellow star
-    }
+    mapping: { ...DEFAULT_TASK_MAPPING }
   },
   outputFormat: "jira",
   autoDetectJiraPaste: false,
@@ -498,7 +649,9 @@ var DEFAULT_SETTINGS = {
     projectKeys: "",
     baseUrl: ""
   },
-  showPreviewBeforeCopy: false,
+  // On by default: the preview modal is where local images are listed
+  // and staged into one folder for dragging into Jira.
+  showPreviewBeforeCopy: true,
   imageEmbedStyle: "thumbnail",
   imageWarningPanel: false,
   explicitLineBreaks: { ...DEFAULT_EXPLICIT_LINE_BREAKS },
@@ -526,7 +679,7 @@ var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
         this.display();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Show preview before copy").setDesc("Display a preview modal showing the converted markup before copying to clipboard.").addToggle(
+    new import_obsidian2.Setting(containerEl).setName("Show preview before copy").setDesc("Display a preview modal showing the converted markup before copying to clipboard. A Jira conversion with local images always shows it, since that is where the images are listed and staged into one folder.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.showPreviewBeforeCopy).onChange(async (value) => {
         this.plugin.settings.showPreviewBeforeCopy = value;
         await this.plugin.saveSettings();
@@ -603,32 +756,18 @@ var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
     );
     if (this.plugin.settings.taskListVisualization.enabled) {
       new import_obsidian2.Setting(containerEl).setName("Task state mappings").setDesc("Map task checkbox states to Jira emoticons. Common states are preconfigured.").setHeading();
-      const taskStates = [
-        { key: "[ ]", label: "Unchecked (incomplete)", default: "(/)" },
-        { key: "[x]", label: "Checked (complete)", default: "(on)" },
-        { key: "[X]", label: "Checked (complete, uppercase)", default: "(on)" },
-        { key: "[>]", label: "In progress / forwarded", default: "(*b)" },
-        { key: "[-]", label: "Cancelled / removed", default: "(-)" },
-        { key: "[/]", label: "Partially complete", default: "(*y)" }
-      ];
+      const taskStates = TASK_STATES;
       for (const taskState of taskStates) {
         if (!this.plugin.settings.taskListVisualization.mapping[taskState.key]) {
           this.plugin.settings.taskListVisualization.mapping[taskState.key] = taskState.default;
         }
         const currentValue = this.plugin.settings.taskListVisualization.mapping[taskState.key];
-        new import_obsidian2.Setting(containerEl).setName(taskState.label).setDesc(`Markdown: \`- ${taskState.key} Task text\``).addDropdown((dropdown) => {
-          dropdown.addOptions(Object.entries(calloutIcons).reduce(
-            (acc, [key, { jiraTag, displayName }]) => ({
-              ...acc,
-              [jiraTag]: displayName
-            }),
-            {}
-          )).setValue(currentValue).onChange(async (value) => {
-            this.plugin.settings.taskListVisualization.mapping[taskState.key] = value;
-            await this.plugin.saveSettings();
-          });
-        }).addButton((button) => {
-          button.setButtonText("Reset").setTooltip(`Reset to default: ${taskState.default}`).onClick(async () => {
+        new import_obsidian2.Setting(containerEl).setName(taskState.label).setDesc(`Markdown: \`- ${taskState.key} Task text\``).then((s) => addIconDropdown(s, currentValue, async (value) => {
+          this.plugin.settings.taskListVisualization.mapping[taskState.key] = value;
+          await this.plugin.saveSettings();
+        })).addButton((button) => {
+          var _a2;
+          button.setButtonText("Reset").setTooltip(`Reset to default: ${(_a2 = ICON_OPTIONS[taskState.default]) != null ? _a2 : taskState.default}`).onClick(async () => {
             this.plugin.settings.taskListVisualization.mapping[taskState.key] = taskState.default;
             await this.plugin.saveSettings();
             this.display();
@@ -647,18 +786,10 @@ var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
               this.display();
             }
           });
-        }).addDropdown((dropdown) => {
-          dropdown.addOptions(Object.entries(calloutIcons).reduce(
-            (acc, [key2, { jiraTag, displayName }]) => ({
-              ...acc,
-              [jiraTag]: displayName
-            }),
-            {}
-          )).setValue(value).onChange(async (value2) => {
-            this.plugin.settings.taskListVisualization.mapping[key] = value2;
-            await this.plugin.saveSettings();
-          });
-        }).addExtraButton((button) => {
+        }).then((s) => addIconDropdown(s, value, async (value2) => {
+          this.plugin.settings.taskListVisualization.mapping[key] = value2;
+          await this.plugin.saveSettings();
+        })).addExtraButton((button) => {
           button.setIcon("cross").setTooltip("Delete mapping").onClick(async () => {
             delete this.plugin.settings.taskListVisualization.mapping[key];
             await this.plugin.saveSettings();
@@ -760,20 +891,10 @@ var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
     if (this.plugin.settings.showCalloutConfiguration) {
       for (const [i, val] of settings.calloutConfigurations.entries()) {
         new import_obsidian2.Setting(containerEl).setName(`Callout-Config of ${val.identifier}:`).setHeading();
-        new import_obsidian2.Setting(containerEl).setName("Choose title icon").addDropdown((dropdown) => {
-          dropdown.addOptions(
-            Object.entries(calloutIcons).reduce(
-              (acc, [key, { jiraTag, displayName }]) => ({
-                ...acc,
-                [jiraTag]: displayName
-              }),
-              {}
-            )
-          ).setValue(val.titleIcon).onChange(async (value) => {
-            settings.calloutConfigurations[i].titleIcon = value;
-            await this.plugin.saveSettings();
-          });
-        });
+        new import_obsidian2.Setting(containerEl).setName("Choose title icon").then((s) => addIconDropdown(s, val.titleIcon, async (value) => {
+          settings.calloutConfigurations[i].titleIcon = value;
+          await this.plugin.saveSettings();
+        }));
         new import_obsidian2.Setting(containerEl).setName(`Choose title text color:`).addColorPicker((colorPicker) => {
           colorPicker.setValue(
             settings.calloutConfigurations[i].titleColor || calloutTypesDefaultColors[val.identifier].titleColor
@@ -5823,8 +5944,8 @@ var basicToDigit = function(codePoint) {
   }
   return base;
 };
-var digitToBasic = function(digit, flag) {
-  return digit + 22 + 75 * (digit < 26) - ((flag != 0) << 5);
+var digitToBasic = function(digit, flag2) {
+  return digit + 22 + 75 * (digit < 26) - ((flag2 != 0) << 5);
 };
 var adapt = function(delta, numPoints, firstTime) {
   let k = 0;
@@ -11341,8 +11462,48 @@ var ConversionOfferModal = class extends import_obsidian7.Modal {
   }
 };
 
+// src/utils/tableAtLine.ts
+var QUOTE_PREFIX = /^\s*(?:>\s?)*/;
+var DELIMITER_CELL = /^\s*:?-+:?\s*$/;
+function stripQuote(line) {
+  return line.replace(QUOTE_PREFIX, "");
+}
+function isRow(line) {
+  const body = stripQuote(line).trim();
+  return body.length > 0 && body.includes("|");
+}
+function isDelimiterRow2(line) {
+  let body = stripQuote(line).trim();
+  if (body.startsWith("|")) body = body.slice(1);
+  if (body.endsWith("|")) body = body.slice(0, -1);
+  const cells = body.split("|");
+  return cells.length > 0 && cells.every((c) => DELIMITER_CELL.test(c));
+}
+function tableBoundsAt(lines, line) {
+  if (line < 0 || line >= lines.length || !isRow(lines[line])) {
+    return null;
+  }
+  let from = line;
+  while (from > 0 && isRow(lines[from - 1])) from--;
+  let to = line;
+  while (to < lines.length - 1 && isRow(lines[to + 1])) to++;
+  if (to - from < 1 || !isDelimiterRow2(lines[from + 1])) return null;
+  return { from, to };
+}
+function tableAt(lines, line) {
+  const b = tableBoundsAt(lines, line);
+  if (!b) return null;
+  return lines.slice(b.from, b.to + 1).map(stripQuote).join("\n");
+}
+
 // src/main.ts
 var MTJPlugin = class extends import_obsidian8.Plugin {
+  constructor() {
+    super(...arguments);
+    // The table widget the user last focused, recorded on focus because
+    // opening the command palette moves focus away before the command runs.
+    this.lastTable = null;
+  }
   async onload() {
     await this.loadSettings();
     const currentVersion = this.manifest.version;
@@ -11361,11 +11522,28 @@ var MTJPlugin = class extends import_obsidian8.Plugin {
     this.addCommand({
       id: "mtj-convert-note-to-jira",
       name: "Note to Jira markup (clipboard)",
-      editorCallback: async (editor) => {
-        const content = editor.getDoc().getValue();
-        await this.convertToJira(content);
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
+        if (!view) return false;
+        if (!checking) void this.convertToJira(view.getViewData());
+        return true;
       }
     });
+    this.addCommand({
+      id: "mtj-convert-table-to-jira",
+      name: "Table under cursor to Jira markup (clipboard)",
+      checkCallback: (checking) => {
+        const table2 = this.tableUnderCursor();
+        if (table2 === null) return false;
+        if (!checking) void this.convertToJira(table2);
+        return true;
+      }
+    });
+    this.registerDomEvent(
+      document,
+      "focusin",
+      (evt) => this.recordTableFocus(evt.target)
+    );
     this.addCommand({
       id: "mtj-convert-selection-to-jira",
       name: "Selection to Jira markup (clipboard)",
@@ -11395,9 +11573,11 @@ var MTJPlugin = class extends import_obsidian8.Plugin {
     this.addCommand({
       id: "mtj-convert-note-to-confluence",
       name: "Note to Confluence markup (clipboard)",
-      editorCallback: async (editor) => {
-        const content = editor.getDoc().getValue();
-        await this.convertToConfluence(content);
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
+        if (!view) return false;
+        if (!checking) void this.convertToConfluence(view.getViewData());
+        return true;
       }
     });
     this.addCommand({
@@ -11442,6 +11622,37 @@ var MTJPlugin = class extends import_obsidian8.Plugin {
       })
     );
     this.addSettingTab(new MTJSettingsTab(this.app, this));
+  }
+  /**
+   * Remember which table widget has focus. Focus entering any other part
+   * of an editor clears it, so a stale table is never converted; focus
+   * moving to the command palette leaves it, which is the point.
+   */
+  recordTableFocus(target) {
+    if (!(target instanceof HTMLElement)) return;
+    const widget = target.closest(".cm-table-widget");
+    if (!widget) {
+      if (target.closest(".markdown-source-view")) this.lastTable = null;
+      return;
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view = leaf.view;
+      if (!(view instanceof import_obsidian8.MarkdownView)) continue;
+      if (!view.containerEl.contains(widget)) continue;
+      const cm = view.editor.cm;
+      if (!cm) return;
+      const line = view.editor.offsetToPos(cm.posAtDOM(widget)).line;
+      this.lastTable = { view, line };
+      return;
+    }
+  }
+  /** Source of the table under the cursor in editing view, or null. */
+  tableUnderCursor() {
+    var _a2;
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
+    if (!view || view.getMode() !== "source") return null;
+    const line = ((_a2 = this.lastTable) == null ? void 0 : _a2.view) === view ? this.lastTable.line : view.editor.getCursor().line;
+    return tableAt(view.editor.getValue().split("\n"), line);
   }
   async convertToJira(content) {
     const markup = await this.translator.convertMarkdownToJira(content);
@@ -11519,15 +11730,12 @@ var MTJPlugin = class extends import_obsidian8.Plugin {
         console.log("[MTJPlugin] Migrating task list visualization to new defaults");
         loadedData.taskListVisualization = {
           enabled: true,
-          mapping: {
-            "[ ]": "(/)",
-            "[x]": "(on)",
-            "[X]": "(on)",
-            "[>]": "(*b)",
-            "[-]": "(-)",
-            "[/]": "(*y)"
-          }
+          mapping: { ...DEFAULT_TASK_MAPPING }
         };
+        needsMigration = true;
+      } else if ((tlv == null ? void 0 : tlv.mapping) && isLegacyTaskMapping(tlv.mapping)) {
+        console.log("[MTJPlugin] Replacing legacy task mapping defaults");
+        tlv.mapping = { ...DEFAULT_TASK_MAPPING };
         needsMigration = true;
       }
       if (loadedData.useLegacyConverter !== void 0) {
