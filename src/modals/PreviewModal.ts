@@ -6,7 +6,9 @@ import {
 	TFile,
 	FileSystemAdapter,
 	Platform,
+	Setting,
 } from 'obsidian';
+import { rebaseHeadings } from '../utils/headingDepth';
 
 type Segment = { text: string; cls?: string };
 
@@ -22,21 +24,32 @@ export interface PreviewImage {
 export class PreviewModal extends Modal {
 	private markup: string;
 	private markupType: 'jira' | 'confluence';
-	private onCopy: () => void;
+	private onCopy: (markup: string) => void;
 	private images: PreviewImage[];
+	private headingTop: number;
+	private onHeadingTop: (top: number) => void;
 
 	constructor(
 		app: App,
 		markup: string,
 		markupType: 'jira' | 'confluence',
-		onCopy: () => void,
+		onCopy: (markup: string) => void,
 		images: PreviewImage[] = [],
+		headingTop = 0,
+		onHeadingTop: (top: number) => void = () => {},
 	) {
 		super(app);
 		this.markup = markup;
 		this.markupType = markupType;
 		this.onCopy = onCopy;
 		this.images = images;
+		this.headingTop = headingTop;
+		this.onHeadingTop = onHeadingTop;
+	}
+
+	/** The markup as it will be copied, headings re-levelled. */
+	private current(): string {
+		return rebaseHeadings(this.markup, this.headingTop);
 	}
 
 	onOpen() {
@@ -46,14 +59,25 @@ export class PreviewModal extends Modal {
 		const markupName = this.markupType === 'confluence' ? 'Confluence' : 'Jira';
 		this.titleEl.setText(`${markupName} markup preview`);
 
+		// Re-level headings so the shallowest becomes a chosen level, for a
+		// note whose own top heading is deeper than the Jira comment wants.
+		new Setting(contentEl)
+			.setName('Top heading level')
+			.setDesc('The shallowest heading becomes this level; the rest keep their depth below it.')
+			.addDropdown((d) => {
+				d.addOption('0', 'As written');
+				for (let n = 1; n <= 6; n++) d.addOption(String(n), `h${n}`);
+				d.setValue(String(this.headingTop)).onChange((v) => {
+					this.headingTop = Number(v);
+					this.onHeadingTop(this.headingTop);
+					this.renderPreview(codeEl, info);
+				});
+			});
+
 		const previewContainer = contentEl.createDiv({ cls: 'mtj-preview-container' });
 		const codeEl = previewContainer.createEl('code');
-		this.highlightSyntax(codeEl, this.markup);
-
-		contentEl.createEl('p', {
-			text: `${this.markup.length} characters`,
-			cls: 'mtj-preview-info',
-		});
+		const info = contentEl.createEl('p', { cls: 'mtj-preview-info' });
+		this.renderPreview(codeEl, info);
 
 		const localImages = this.images.filter((i) => i.isLocal);
 		if (localImages.length > 0) {
@@ -74,8 +98,15 @@ export class PreviewModal extends Modal {
 			.setButtonText('Copy to clipboard')
 			.setCta()
 			.onClick(() => {
-				this.onCopy();
+				this.onCopy(this.current());
 			});
+	}
+
+	private renderPreview(codeEl: HTMLElement, info: HTMLElement): void {
+		const markup = this.current();
+		codeEl.empty();
+		this.highlightSyntax(codeEl, markup);
+		info.setText(`${markup.length} characters`);
 	}
 
 	private renderImageList(container: HTMLElement, images: PreviewImage[]): void {

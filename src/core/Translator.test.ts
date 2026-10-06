@@ -68,6 +68,8 @@ describe('Translator - Markdown to Jira Conversion', () => {
                 afterTable: false,
             },
             codeBlockStyle: 'code',
+            headingBreakMigrated: true,
+            headingTop: 0,
         };
 
         mockPlugin = {
@@ -317,10 +319,14 @@ describe('Translator - Markdown to Jira Conversion', () => {
         test('should convert fenced code block without language', async () => {
             const markdown = '```\ncode line 1\ncode line 2\n```';
             const result = await translator.convertMarkdownToJira(markdown);
-            expect(result).toContain('{code:none}');
+            // No language is plain text: {noformat}, since a bare {code}
+            // falls back to Java highlighting and Jira does not know `none`
+            // everywhere.
+            expect(result).toContain('{noformat}');
+            expect(result).not.toContain('{code');
             expect(result).toContain('code line 1');
             expect(result).toContain('code line 2');
-            expect(result).toContain('{code}');
+            expect(result).toMatch(/\{noformat\}\s*$/);
         });
 
         test('should convert fenced code block with JavaScript language', async () => {

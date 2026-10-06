@@ -34,7 +34,9 @@ export const PLUGIN_INFO = {
  * (which extends an obsidian UI class).
  */
 export const DEFAULT_EXPLICIT_LINE_BREAKS = {
-	afterHeading: true,
+	// Off since 1.0.1-plus.6: Jira's own heading spacing changed, and a
+	// forced break after every heading now adds unwanted blank space.
+	afterHeading: false,
 	beforeTable: true,
 	afterTable: true,
 };

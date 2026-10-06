@@ -16,7 +16,8 @@ export function mermaid(
 
 	md.renderer.rules.fence = (tokens, idx, options, env, self) => {
 		const token = tokens[idx];
-		const lang = token.info.trim().toLowerCase();
+		// The first word only: a fence may carry Code Styler options after it.
+		const lang = (token.info.trim().split(/\s+/)[0] || '').toLowerCase();
 
 		// Only intercept mermaid blocks
 		if (lang !== 'mermaid') {

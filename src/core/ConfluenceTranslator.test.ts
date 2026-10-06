@@ -68,6 +68,8 @@ describe('ConfluenceTranslator - Markdown to Confluence Conversion', () => {
 				afterTable: true,
 			},
 			codeBlockStyle: 'code',
+			headingBreakMigrated: true,
+			headingTop: 0,
 		};
 
 		mockPlugin = {

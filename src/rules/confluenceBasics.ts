@@ -1,10 +1,14 @@
 import * as MarkdownIt from "markdown-it";
+import { parseFenceInfo } from '../utils/codeBlock';
 import { Validator } from "../utils/Validator";
 import { ConfluenceTranslator } from "../core/ConfluenceTranslator";
 import { renderCellClose } from "../utils/tableCells";
 import { blockSpacing } from "./blockSpacing";
 import { listLevels } from "./listLevels";
 import { DEFAULT_EXPLICIT_LINE_BREAKS } from "../constants";
+
+// Languages that mean plain text, which Confluence's code macro calls `none`.
+const PLAIN_LANGS = new Set(['', 'text', 'txt', 'plain', 'plaintext', 'none']);
 
 /**
  * Confluence-specific markdown-it rules
@@ -149,8 +153,13 @@ export function confluenceBasics(md: MarkdownIt, options?: { translator?: Conflu
 	md.renderer.rules.fence = (tokens, idx) => {
 		const token = tokens[idx];
 		const code = token.content.trim();
-		const lang = token.info.trim() || 'none';
-		return `{code:${lang}}\n${code}\n{code}\n`;
+		// Only the language word reaches Confluence; Code Styler's options
+		// after it (hl:, fold, title:) are the vault reader's, not the
+		// macro's. Plain text has no language, so it takes `none`.
+		const { lang, title } = parseFenceInfo(token.info);
+		const head = title ? `*${title}*\n` : '';
+		const language = PLAIN_LANGS.has(lang.toLowerCase()) ? 'none' : lang;
+		return `${head}{code:${language}}\n${code}\n{code}\n`;
 	};
 
 	// Tables (same as Jira - Confluence uses same syntax)

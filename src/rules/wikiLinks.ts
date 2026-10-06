@@ -77,7 +77,14 @@ ${inline}`;
 
     md.renderer.rules.wikilink = (tokens, idx) => {
         const content = tokens[idx].content;
+        // `[[target|display]]` shows its display text; the pipe may be
+        // escaped, `\|`, when the link sits in a table. Without this split
+        // the whole `target|display` became both the text and the anchor,
+        // which Jira renders as a garbled link.
+        const [target, display] = content.split(/\\?\|/);
+        const text = (display ?? target).trim();
+        const anchor = target.trim().replace(/\s+/g, '-').toLowerCase();
         // Convert wikilinks to Jira format links assuming internal pages
-        return `[${content}|#${content.replace(/\s+/g, '-').toLowerCase()}]`;
+        return `[${text}|#${anchor}]`;
     };
 }

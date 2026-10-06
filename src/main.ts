@@ -12,6 +12,7 @@ import { PreviewModal } from "./modals/PreviewModal";
 import { ClipboardDetector } from "./services/ClipboardDetector";
 import { ConversionOfferModal } from "./modals/ConversionOfferModal";
 import { MESSAGES } from "./constants";
+import { rebaseHeadings } from "./utils/headingDepth";
 import { tableAt } from "./utils/tableAtLine";
 import { DEFAULT_TASK_MAPPING, isLegacyTaskMapping } from "./utils/taskStates";
 
@@ -225,14 +226,17 @@ export default class MTJPlugin extends Plugin {
 				this.app,
 				markup,
 				'jira',
-				async () => {
-					await navigator.clipboard.writeText(markup);
+				async (copied: string) => {
+					await navigator.clipboard.writeText(copied);
 					new Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
 				},
 				images,
+				this.settings.headingTop,
+				(top: number) => this.rememberHeadingTop(top),
 			).open();
 		} else {
-			await navigator.clipboard.writeText(markup);
+			await navigator.clipboard.writeText(
+				rebaseHeadings(markup, this.settings.headingTop));
 			new Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
 		}
 	}
@@ -241,14 +245,22 @@ export default class MTJPlugin extends Plugin {
 		const markup = await this.confluenceTranslator.convertMarkdownToConfluence(content);
 
 		if (this.settings.showPreviewBeforeCopy) {
-			new PreviewModal(this.app, markup, 'confluence', async () => {
-				await navigator.clipboard.writeText(markup);
+			new PreviewModal(this.app, markup, 'confluence', async (copied: string) => {
+				await navigator.clipboard.writeText(copied);
 				new Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
-			}).open();
+			}, [], this.settings.headingTop,
+			(top: number) => this.rememberHeadingTop(top)).open();
 		} else {
-			await navigator.clipboard.writeText(markup);
+			await navigator.clipboard.writeText(
+				rebaseHeadings(markup, this.settings.headingTop));
 			new Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
 		}
+	}
+
+	/** Keep the last heading level chosen in the preview for next time. */
+	private async rememberHeadingTop(top: number): Promise<void> {
+		this.settings.headingTop = top;
+		await this.saveSettings();
 	}
 
 	onunload() {}
@@ -337,6 +349,15 @@ export default class MTJPlugin extends Plugin {
 			DEFAULT_SETTINGS as unknown as Record<string, unknown>,
 			(loadedData || {}) as Record<string, unknown>,
 		) as unknown as MTJPluginSettings;
+
+		// Jira's heading spacing changed, so the forced break after every
+		// heading now adds blank space. Switch it off once in saved settings,
+		// which still hold the old default; the toggle can turn it back on.
+		if (!this.settings.headingBreakMigrated) {
+			this.settings.explicitLineBreaks.afterHeading = false;
+			this.settings.headingBreakMigrated = true;
+			needsMigration = true;
+		}
 
 		if (needsMigration) {
 			await this.saveSettings();

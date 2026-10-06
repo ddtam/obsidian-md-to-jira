@@ -106,6 +106,10 @@ export interface MTJPluginSettings {
 	imageWarningPanel: boolean;
 	explicitLineBreaks: MTJExplicitLineBreaks;
 	codeBlockStyle: CodeBlockStyle;
+	/** Set once the heading-break default has been switched off (plus.6). */
+	headingBreakMigrated: boolean;
+	/** The level the shallowest heading is copied as; 0 keeps them as written. */
+	headingTop: number;
 }
 
 export const DEFAULT_SETTINGS: MTJPluginSettings = {
@@ -142,6 +146,8 @@ export const DEFAULT_SETTINGS: MTJPluginSettings = {
 	imageWarningPanel: false,
 	explicitLineBreaks: { ...DEFAULT_EXPLICIT_LINE_BREAKS },
 	codeBlockStyle: 'code',
+	headingBreakMigrated: false,
+	headingTop: 0,
 };
 
 export default class MTJSettingsTab extends PluginSettingTab {

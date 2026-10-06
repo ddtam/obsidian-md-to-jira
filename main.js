@@ -57,7 +57,9 @@ var JIRA_MARKUP = {
   }
 };
 var DEFAULT_EXPLICIT_LINE_BREAKS = {
-  afterHeading: true,
+  // Off since 1.0.1-plus.6: Jira's own heading spacing changed, and a
+  // forced break after every heading now adds unwanted blank space.
+  afterHeading: false,
   beforeTable: true,
   afterTable: true
 };
@@ -655,7 +657,9 @@ var DEFAULT_SETTINGS = {
   imageEmbedStyle: "thumbnail",
   imageWarningPanel: false,
   explicitLineBreaks: { ...DEFAULT_EXPLICIT_LINE_BREAKS },
-  codeBlockStyle: "code"
+  codeBlockStyle: "code",
+  headingBreakMigrated: false,
+  headingTop: 0
 };
 var MTJSettingsTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
@@ -9184,7 +9188,10 @@ ${inline2}`;
   };
   md.renderer.rules.wikilink = (tokens, idx) => {
     const content = tokens[idx].content;
-    return `[${content}|#${content.replace(/\s+/g, "-").toLowerCase()}]`;
+    const [target, display] = content.split(/\\?\|/);
+    const text2 = (display != null ? display : target).trim();
+    const anchor = target.trim().replace(/\s+/g, "-").toLowerCase();
+    return `[${text2}|#${anchor}]`;
   };
 }
 
@@ -9200,15 +9207,29 @@ var Validator = class {
 };
 
 // src/utils/codeBlock.ts
-function renderCodeBlock(code2, lang, style) {
-  if (style === "noformat") {
-    return `{noformat}
+var PLAIN = /* @__PURE__ */ new Set(["", "text", "txt", "plain", "plaintext", "none"]);
+var BARE_OPTIONS = /* @__PURE__ */ new Set(["fold", "wrap", "unwrap", "ignore"]);
+function parseFenceInfo(info) {
+  var _a2, _b, _c;
+  const raw = (info || "").trim();
+  const first = raw.split(/\s+/)[0] || "";
+  const isOption = /[:=]/.test(first) || BARE_OPTIONS.has(first.toLowerCase());
+  const lang = isOption ? "" : first;
+  const m = raw.match(/(?:^|\s)title[:=](?:"([^"]*)"|'([^']*)'|(\S+))/);
+  const title = m ? (_c = (_b = (_a2 = m[1]) != null ? _a2 : m[2]) != null ? _b : m[3]) != null ? _c : null : null;
+  return { lang, title };
+}
+function renderCodeBlock(code2, info, style) {
+  const { lang, title } = parseFenceInfo(info);
+  const head = title ? `*${title}*
+` : "";
+  if (style === "noformat" || PLAIN.has(lang.toLowerCase())) {
+    return `${head}{noformat}
 ${code2}
 {noformat}
 `;
   }
-  const language = lang || "none";
-  return `{code:${language}}
+  return `${head}{code:${lang}}
 ${code2}
 {code}
 `;
@@ -9607,7 +9628,7 @@ function mermaid(md, handling, codeBlockStyle = "code") {
   const originalFence = md.renderer.rules.fence;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
-    const lang = token.info.trim().toLowerCase();
+    const lang = (token.info.trim().split(/\s+/)[0] || "").toLowerCase();
     if (lang !== "mermaid") {
       if (originalFence) {
         return originalFence(tokens, idx, options, env, self);
@@ -10268,6 +10289,7 @@ var Translator = class {
 };
 
 // src/rules/confluenceBasics.ts
+var PLAIN_LANGS = /* @__PURE__ */ new Set(["", "text", "txt", "plain", "plaintext", "none"]);
 function confluenceBasics(md, options) {
   var _a2, _b;
   const settings = (_a2 = options == null ? void 0 : options.translator) == null ? void 0 : _a2.plugin.settings;
@@ -10372,8 +10394,11 @@ function confluenceBasics(md, options) {
   md.renderer.rules.fence = (tokens, idx) => {
     const token = tokens[idx];
     const code2 = token.content.trim();
-    const lang = token.info.trim() || "none";
-    return `{code:${lang}}
+    const { lang, title } = parseFenceInfo(token.info);
+    const head = title ? `*${title}*
+` : "";
+    const language = PLAIN_LANGS.has(lang.toLowerCase()) ? "none" : lang;
+    return `${head}{code:${language}}
 ${code2}
 {code}
 `;
@@ -11030,26 +11055,69 @@ var UpdateModal = class extends import_obsidian5.Modal {
 
 // src/modals/PreviewModal.ts
 var import_obsidian6 = require("obsidian");
+
+// src/utils/headingDepth.ts
+var HEADING = /^h([1-6])\.(\s)/;
+var FENCE = /^\{(code|noformat)(:[^}]*)?\}\s*$/;
+function rebaseHeadings(markup, top) {
+  if (!top) return markup;
+  const lines = markup.split("\n");
+  const isHeading = [];
+  let open = null;
+  let shallowest = 7;
+  lines.forEach((line, i) => {
+    const f = line.match(FENCE);
+    if (f) {
+      open = open === f[1] ? null : open != null ? open : f[1];
+      isHeading[i] = false;
+      return;
+    }
+    const h = open ? null : line.match(HEADING);
+    isHeading[i] = !!h;
+    if (h) shallowest = Math.min(shallowest, Number(h[1]));
+  });
+  if (shallowest === 7) return markup;
+  const shift = top - shallowest;
+  return lines.map((line, i) => {
+    if (!isHeading[i]) return line;
+    return line.replace(HEADING, (_, n, sp) => `h${Math.min(6, Math.max(1, Number(n) + shift))}.${sp}`);
+  }).join("\n");
+}
+
+// src/modals/PreviewModal.ts
 var PreviewModal = class extends import_obsidian6.Modal {
-  constructor(app, markup, markupType, onCopy, images = []) {
+  constructor(app, markup, markupType, onCopy, images = [], headingTop = 0, onHeadingTop = () => {
+  }) {
     super(app);
     this.markup = markup;
     this.markupType = markupType;
     this.onCopy = onCopy;
     this.images = images;
+    this.headingTop = headingTop;
+    this.onHeadingTop = onHeadingTop;
+  }
+  /** The markup as it will be copied, headings re-levelled. */
+  current() {
+    return rebaseHeadings(this.markup, this.headingTop);
   }
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
     const markupName = this.markupType === "confluence" ? "Confluence" : "Jira";
     this.titleEl.setText(`${markupName} markup preview`);
+    new import_obsidian6.Setting(contentEl).setName("Top heading level").setDesc("The shallowest heading becomes this level; the rest keep their depth below it.").addDropdown((d) => {
+      d.addOption("0", "As written");
+      for (let n = 1; n <= 6; n++) d.addOption(String(n), `h${n}`);
+      d.setValue(String(this.headingTop)).onChange((v) => {
+        this.headingTop = Number(v);
+        this.onHeadingTop(this.headingTop);
+        this.renderPreview(codeEl, info);
+      });
+    });
     const previewContainer = contentEl.createDiv({ cls: "mtj-preview-container" });
     const codeEl = previewContainer.createEl("code");
-    this.highlightSyntax(codeEl, this.markup);
-    contentEl.createEl("p", {
-      text: `${this.markup.length} characters`,
-      cls: "mtj-preview-info"
-    });
+    const info = contentEl.createEl("p", { cls: "mtj-preview-info" });
+    this.renderPreview(codeEl, info);
     const localImages = this.images.filter((i) => i.isLocal);
     if (localImages.length > 0) {
       this.renderImageList(contentEl, localImages);
@@ -11059,8 +11127,14 @@ var PreviewModal = class extends import_obsidian6.Modal {
       this.close();
     });
     new import_obsidian6.ButtonComponent(buttonContainer).setButtonText("Copy to clipboard").setCta().onClick(() => {
-      this.onCopy();
+      this.onCopy(this.current());
     });
+  }
+  renderPreview(codeEl, info) {
+    const markup = this.current();
+    codeEl.empty();
+    this.highlightSyntax(codeEl, markup);
+    info.setText(`${markup.length} characters`);
   }
   renderImageList(container, images) {
     const section = container.createDiv({ cls: "mtj-image-list" });
@@ -11663,28 +11737,47 @@ var MTJPlugin = class extends import_obsidian8.Plugin {
         this.app,
         markup,
         "jira",
-        async () => {
-          await navigator.clipboard.writeText(markup);
+        async (copied) => {
+          await navigator.clipboard.writeText(copied);
           new import_obsidian8.Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
         },
-        images
+        images,
+        this.settings.headingTop,
+        (top) => this.rememberHeadingTop(top)
       ).open();
     } else {
-      await navigator.clipboard.writeText(markup);
+      await navigator.clipboard.writeText(
+        rebaseHeadings(markup, this.settings.headingTop)
+      );
       new import_obsidian8.Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
     }
   }
   async convertToConfluence(content) {
     const markup = await this.confluenceTranslator.convertMarkdownToConfluence(content);
     if (this.settings.showPreviewBeforeCopy) {
-      new PreviewModal(this.app, markup, "confluence", async () => {
-        await navigator.clipboard.writeText(markup);
-        new import_obsidian8.Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
-      }).open();
+      new PreviewModal(
+        this.app,
+        markup,
+        "confluence",
+        async (copied) => {
+          await navigator.clipboard.writeText(copied);
+          new import_obsidian8.Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
+        },
+        [],
+        this.settings.headingTop,
+        (top) => this.rememberHeadingTop(top)
+      ).open();
     } else {
-      await navigator.clipboard.writeText(markup);
+      await navigator.clipboard.writeText(
+        rebaseHeadings(markup, this.settings.headingTop)
+      );
       new import_obsidian8.Notice(MESSAGES.SUCCESS.COPIED_CLIPBOARD);
     }
+  }
+  /** Keep the last heading level chosen in the preview for next time. */
+  async rememberHeadingTop(top) {
+    this.settings.headingTop = top;
+    await this.saveSettings();
   }
   onunload() {
   }
@@ -11748,6 +11841,11 @@ var MTJPlugin = class extends import_obsidian8.Plugin {
       DEFAULT_SETTINGS,
       loadedData || {}
     );
+    if (!this.settings.headingBreakMigrated) {
+      this.settings.explicitLineBreaks.afterHeading = false;
+      this.settings.headingBreakMigrated = true;
+      needsMigration = true;
+    }
     if (needsMigration) {
       await this.saveSettings();
       console.log("[MTJPlugin] Settings migration completed and saved");
